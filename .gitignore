@@ -1,0 +1,39 @@
+# 환경변수/시크릿 — 절대 커밋 금지 (DATABASE_URL, SESSION_SECRET 등)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Node (프론트 스택 선택 시 대비)
+node_modules/
+
+# 실행 로그 (harness_05 §5 — 로그는 커밋하지 않고 별도 보관, 폴더 구조만 유지)
+logs/*
+!logs/.gitkeep
+
+# 사용자 업로드 산출물 (실제 데이터는 리포지토리에 들어가지 않음)
+uploads/
+media/
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 빌드 산출물
+dist/
+build/
+*.log

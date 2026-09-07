@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  # 프로젝트 착수 시 실제 기준(base) 브랜치명으로 교체하세요 (CLAUDE.md에 선언한 것과 일치시킬 것)
+  # 기준(base) 브랜치: PROD_SCH (CLAUDE.md "Git 워크플로우" 2026-09-07 선언과 일치)
   pull_request:
-    branches: [main]
+    branches: [PROD_SCH]
 
 jobs:
   repo-health:
@@ -49,27 +49,70 @@ jobs:
           ./gitleaks detect --source . --no-banner --redact --exit-code 1
 
   dependency-scan:
-    name: 의존성 취약점 스캔 (스택 확정 후 구체화 — harness_13_tech_conventions.md §7 참조)
+    name: 의존성 취약점 스캔 (스택 확정 — docs/tech_conventions.md, 2026-09-07)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 의존성 취약점 스캔 실행
-        run: echo "프로젝트 스택 확정 후 채우기 (예: npm audit / pip-audit / osv-scanner)"
+      - name: 백엔드(Python) 의존성 스캔 - pip-audit
+        run: |
+          if [ -f src/backend/requirements.txt ]; then
+            pip install pip-audit
+            pip-audit -r src/backend/requirements.txt
+          else
+            echo "src/backend/requirements.txt 없음 — 백엔드 미착수, 스킵"
+          fi
+      - name: 프론트엔드(Node) 의존성 스캔 - npm audit
+        run: |
+          if [ -f src/frontend/package.json ]; then
+            cd src/frontend && npm audit --audit-level=high
+          else
+            echo "src/frontend/package.json 없음 — 프론트엔드 미착수, 스킵"
+          fi
 
   lint:
-    name: 정적 분석/포맷팅/타입체크 (스택 확정 후 구체화 — harness_13_tech_conventions.md §4 참조)
+    name: 정적 분석/포맷팅/타입체크 (스택 확정 — docs/tech_conventions.md, 2026-09-07)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: lint/format/type-check 실행
-        run: echo "프로젝트 스택 확정 후 채우기 (예: eslint+prettier / ruff+mypy)"
+      - name: 백엔드 lint/format/type-check - ruff + mypy
+        run: |
+          if [ -f src/backend/requirements.txt ]; then
+            pip install ruff mypy
+            ruff check src/backend
+            mypy src/backend/app
+          else
+            echo "src/backend 없음 — 백엔드 미착수, 스킵"
+          fi
+      - name: 프론트엔드 lint/format/type-check - eslint
+        run: |
+          if [ -f src/frontend/package.json ]; then
+            cd src/frontend && npm ci && npm run lint
+          else
+            echo "src/frontend 없음 — 프론트엔드 미착수, 스킵"
+          fi
 
   test:
-    name: TRD §6 기반 테스트 (스택 확정 후 구체화)
+    name: TRD §6 기반 테스트 (스택 확정 — docs/tech_conventions.md, 2026-09-07)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: aimock_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - name: 의존성 설치
-        run: echo "프로젝트 스택 확정 후 채우기 (harness_13_tech_conventions.md 참조)"
-      - name: 테스트 실행 (AC 기반)
-        run: echo "TRD §6 기반 테스트 스위트 실행"
+      - name: 백엔드 테스트 - pytest (AC 대응 테스트, docs/trd/aimock_master_trd.md §5 참조)
+        run: |
+          if [ -f src/backend/requirements.txt ]; then
+            pip install -r src/backend/requirements.txt
+            pytest tests/backend -v
+          else
+            echo "src/backend 없음 — 백엔드 미착수, 스킵"
+          fi

@@ -1,0 +1,38 @@
+# ADR-005: 로컬 Docker Compose 배포(Kubernetes/GCP 대체)
+# ADR-003: PostgreSQL + pgvector 단일 DB (Redis/Celery 없음)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: aimock
+      POSTGRES_PASSWORD: aimock_dev_only
+      POSTGRES_DB: aimock
+    ports:
+      # 호스트 55432 사용 — 로컬에 이미 5432를 쓰는 다른 Postgres가 있을 수 있어 충돌 방지
+      - "55432:5432"
+    volumes:
+      - aimock_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aimock"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ./src/backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aimock:aimock_dev_only@postgres:5432/aimock
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/backend:/app
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  aimock_pgdata:

@@ -12,7 +12,7 @@ from app.config import settings
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.models.interview import Interview
 from app.models.transcript import Transcript
-from app.services import question_service
+from app.services import media_service, question_service
 
 LENGTH_LIMIT_NOTICE = "답변이 길어지고 있어 다음 질문으로 넘어가겠습니다."
 
@@ -81,6 +81,13 @@ async def submit_turn(
     llm: LLMProvider,
 ) -> tuple[str, bool]:
     interview = await _get_owned_live_interview(db, interview_id, user_id)
+
+    # ADR-004(2026-09-07 확정): 원본 오디오는 지원자 삭제 요청 전까지 암호화
+    # 보관해야 함 — 2026-09-08 재검토(마스터 TRD §3 N-003 라인 리뷰)에서
+    # 이 흐름이 그동안 STT 변환에만 audio_bytes를 쓰고 U1-b 암호화 저장을
+    # 호출하지 않는 것을 발견해 연결함(정책은 이미 승인됐고, 실행이
+    # 누락됐던 것을 고친 것 — 새 정책 결정 아님).
+    await media_service.upload_media(db, interview.id, user_id, "audio", turn_index, audio_bytes)
 
     user_text = await stt.transcribe(audio_bytes)
     db.add(

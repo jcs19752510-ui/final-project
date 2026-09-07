@@ -94,6 +94,60 @@ async def test_ac6_relogin_within_grace_period_restores_account(client, db_sessi
     assert user.purge_at is None
 
 
+async def test_ac8_repeated_failed_logins_are_rate_limited(client):
+    """2026-09-08 추가 — app/core/rate_limit.py. 5회 실패 후 6번째는 자격
+    검증 전에 429로 즉시 잠긴다(브루트포스 완화)."""
+    email = "ratelimit-target@example.com"
+    await _signup(client, email=email)
+
+    for _ in range(5):
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "wrong-password"},
+        )
+        assert resp.status_code == 401
+
+    locked = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "wrong-password"},
+    )
+    assert locked.status_code == 429
+    assert locked.json()["error"]["code"] == "RATE_LIMITED"
+
+    # 올바른 비밀번호를 넣어도 잠금 중에는 로그인 불가(자격 검증 전에 차단)
+    still_locked = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "password123"},
+    )
+    assert still_locked.status_code == 429
+
+
+async def test_ac9_successful_login_resets_failure_counter(client):
+    email = "ratelimit-reset@example.com"
+    await _signup(client, email=email)
+
+    for _ in range(3):
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "wrong-password"},
+        )
+        assert resp.status_code == 401
+
+    ok = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "password123"},
+    )
+    assert ok.status_code == 200
+
+    # 성공 후 카운터가 리셋되므로, 다시 3번 실패해도(누적 6번이 아니라) 여전히 401이지 429가 아니어야 함
+    for _ in range(3):
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "wrong-password"},
+        )
+        assert resp.status_code == 401
+
+
 async def test_ac7_purge_expired_users_deletes_record(client, db_session):
     from app.services.user_service import purge_expired_users
 

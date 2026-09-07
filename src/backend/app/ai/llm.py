@@ -47,9 +47,19 @@ class LLMProvider(ABC):
 
 
 class GeminiProvider(LLMProvider):
-    """실제 구현. GEMINI_API_KEY가 없으면 호출 시점에만 예외 발생(지연 초기화)."""
+    """실제 구현. GEMINI_API_KEY가 없으면 호출 시점에만 예외 발생(지연 초기화).
 
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    모델명 이력(2026-09-08, 실제 키로 검증하며 2회 변경):
+    1. `gemini-2.0-flash` → 서비스 종료(404) 발견, `-latest` 별칭으로 교체.
+    2. `gemini-flash-latest` → 그 시점에 구글 쪽 일시적 과부하(503,
+       "high demand")로 실패 확인(같은 키로 `gemini-2.5-flash-lite`는
+       동시에 정상 응답해 키 문제가 아님을 직접 검증). 특정 모델의 일시적
+       과부하 리스크를 피하려고 안정 버전인 `gemini-2.5-flash-lite`로
+       고정. 나중에 여유가 되면 `gemini-2.5-flash`(비-lite)로 품질 재평가
+       권장.
+    """
+
+    def __init__(self, model: str = "gemini-2.5-flash-lite"):
         self._model = model
         self._client = None
 
@@ -80,17 +90,26 @@ class GeminiProvider(LLMProvider):
         )
 
     async def generate_next_turn(self, context: ConversationContext) -> LLMTurnResult:
-        from google.genai import types
+        from google.genai import errors, types
 
         client = self._get_client()
-        response = await client.aio.models.generate_content(
-            model=self._model,
-            contents=self._build_contents(context),
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-            ),
-        )
+        try:
+            response = await client.aio.models.generate_content(
+                model=self._model,
+                contents=self._build_contents(context),
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                ),
+            )
+        except errors.APIError as exc:
+            # Gemini 쪽 오류(모델 단종/쿼터 초과/일시 장애 등)를 원본 500으로
+            # 새지 않게 표준 에러 포맷(503)으로 변환(2026-09-08 추가 — 실제
+            # 키로 테스트하다 모델 단종 시 raw 500이 나가는 것을 발견).
+            logger.warning("Gemini API 호출 실패: %s", exc)
+            raise ServiceUnavailableError(
+                "AI 면접관 호출에 실패했습니다. 잠시 후 다시 시도해 주세요."
+            ) from exc
         return _parse_or_fallback(response.text)
 
 

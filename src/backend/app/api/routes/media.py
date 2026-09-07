@@ -12,6 +12,18 @@ from app.services import media_service
 router = APIRouter(tags=["media"])
 
 
+@router.get(
+    "/api/v1/interviews/{interview_id}/media",
+    response_model=list[MediaAssetResponse],
+)
+async def list_media(
+    interview_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await media_service.list_media(db, interview_id, current_user.id)
+
+
 @router.post(
     "/api/v1/interviews/{interview_id}/media",
     response_model=MediaAssetResponse,

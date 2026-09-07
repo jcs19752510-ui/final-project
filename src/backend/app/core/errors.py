@@ -44,3 +44,10 @@ class ServiceUnavailableError(AppError):
 
     status_code = 503
     code = "SERVICE_UNAVAILABLE"
+
+
+class RateLimitedError(AppError):
+    """로그인 브루트포스 완화(app/core/rate_limit.py) — 반복 실패 시 잠금."""
+
+    status_code = 429
+    code = "RATE_LIMITED"

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.crypto import encrypt_bytes
+from app.core.crypto import decrypt_bytes, encrypt_bytes
 from app.core.errors import ForbiddenError, NotFoundError
 from app.models.interview import Interview
 from app.models.media_asset import MediaAsset
@@ -55,6 +55,23 @@ async def upload_media(
     await db.commit()
     await db.refresh(asset)
     return asset
+
+
+async def list_media(db: AsyncSession, interview_id: UUID, user_id: UUID) -> list[MediaAsset]:
+    """리포트 화면에서 지원자가 자신의 원본 미디어 목록을 보고 삭제를
+    요청할 수 있게 하기 위한 조회(마스터 TRD AC-M6, 2026-09-08 추가)."""
+    await _get_owned_interview(db, interview_id, user_id)
+    stmt = select(MediaAsset).where(MediaAsset.interview_id == interview_id).order_by(
+        MediaAsset.turn_index
+    )
+    return list((await db.scalars(stmt)).all())
+
+
+def read_media_bytes(asset: MediaAsset) -> bytes:
+    """U3-b: 리포트 생성 시 저장된 원본 미디어를 다시 읽어 분석기에
+    넣기 위한 헬퍼(docs/trd/aimock_u3b_trd.md §3)."""
+    encrypted = Path(asset.storage_path).read_bytes()
+    return decrypt_bytes(encrypted)
 
 
 async def delete_media(db: AsyncSession, media_id: UUID, user_id: UUID) -> None:

@@ -3,6 +3,7 @@
 from sqlalchemy import select
 
 from app.models.interview import Interview
+from app.models.media_asset import MediaAsset
 
 
 async def _signup_and_login(client, email="candidate@example.com"):
@@ -60,6 +61,69 @@ async def test_ac2_turn_saves_user_and_ai_transcripts(client, db_session, _fake_
     )
     speakers = sorted(r.speaker for r in rows)
     assert speakers == ["ai", "ai", "user"]  # 오프닝 질문 + 사용자 답변 + 다음 질문
+
+
+async def test_ac2b_turn_persists_original_audio_as_encrypted_media(client, db_session, _fake_providers):
+    """2026-09-08 추가 — 마스터 TRD §3 N-003/ADR-004 재검토에서 발견한 갭:
+    턴 제출이 STT에만 오디오를 쓰고 U1-b 암호화 저장을 호출하지 않던 것을
+    고침. 원본 미디어가 실제로 media_assets에 남아야 AC-M6(리포트 화면에서
+    삭제)가 의미를 가진다."""
+    token = await _signup_and_login(client)
+    start = await client.post(
+        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+    )
+    interview_id = start.json()["interview_id"]
+
+    resp = await client.post(
+        f"/api/v1/interviews/{interview_id}/turns",
+        headers=_auth(token),
+        data={"turn_index": "0"},
+        files={"audio": ("a.webm", b"fake-audio-bytes", "audio/webm")},
+    )
+    assert resp.status_code == 200
+
+    assets = list(
+        (
+            await db_session.scalars(
+                select(MediaAsset).where(MediaAsset.interview_id == interview_id)
+            )
+        ).all()
+    )
+    assert len(assets) == 1
+    assert assets[0].kind == "audio"
+    assert assets[0].turn_index == 0
+    assert assets[0].encrypted is True
+
+
+async def test_ac2c_candidate_can_list_and_delete_own_turn_media(client, _fake_providers):
+    """AC-M6 — 리포트 화면에서 원본 오디오 삭제 요청이 실제로 가능해야 함."""
+    token = await _signup_and_login(client)
+    start = await client.post(
+        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+    )
+    interview_id = start.json()["interview_id"]
+    await client.post(
+        f"/api/v1/interviews/{interview_id}/turns",
+        headers=_auth(token),
+        data={"turn_index": "0"},
+        files={"audio": ("a.webm", b"fake-audio-bytes", "audio/webm")},
+    )
+
+    listed = await client.get(
+        f"/api/v1/interviews/{interview_id}/media", headers=_auth(token)
+    )
+    assert listed.status_code == 200
+    media = listed.json()
+    assert len(media) == 1
+    assert media[0]["kind"] == "audio"
+
+    deleted = await client.delete(f"/api/v1/media/{media[0]['id']}", headers=_auth(token))
+    assert deleted.status_code == 204
+
+    listed_again = await client.get(
+        f"/api/v1/interviews/{interview_id}/media", headers=_auth(token)
+    )
+    assert listed_again.json() == []
 
 
 async def test_ac3_long_answer_skips_llm_call(client, _fake_providers):

@@ -94,6 +94,10 @@ jobs:
   test:
     name: TRD §6 기반 테스트 (스택 확정 — docs/tech_conventions.md, 2026-09-07)
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:ci_test_only@localhost:5432/aimock_test
+      JWT_SECRET: ci-test-only-secret
+      MEDIA_ENCRYPTION_KEY: k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70=
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -108,10 +112,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - name: 백엔드 테스트 - pytest (AC 대응 테스트, docs/trd/aimock_master_trd.md §5 참조)
+      - name: 백엔드 테스트 - alembic 마이그레이션 + pytest (AC 대응, docs/trd/aimock_master_trd.md §5 참조)
         run: |
           if [ -f src/backend/requirements.txt ]; then
             pip install -r src/backend/requirements.txt
+            cd src/backend && python -m alembic upgrade head && cd ../..
             pytest tests/backend -v
           else
             echo "src/backend 없음 — 백엔드 미착수, 스킵"

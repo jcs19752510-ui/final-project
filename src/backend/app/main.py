@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, media
+from app.api.routes import auth, interview, media
 from app.core.errors import AppError
 from app.services.scheduler import create_scheduler
 
@@ -29,6 +29,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 app.include_router(auth.router)
 app.include_router(media.router)
+app.include_router(interview.router)
 
 
 @app.get("/healthz")

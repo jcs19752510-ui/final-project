@@ -1,3 +1,7 @@
+"""app.config가 import 시점에 환경변수를 읽으므로, 아래 import들보다 먼저
+os.environ 기본값과 sys.path를 설정해야 한다 — 이 파일 전체에 E402(모듈
+상단 이후 import) 예외를 적용한다."""
+# ruff: noqa: E402
 import os
 import sys
 from pathlib import Path
@@ -17,8 +21,11 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from app.ai.providers import get_llm_provider, get_stt_provider
 from app.db import AsyncSessionLocal, Base, engine
 from app.main import app
+
+from fakes import FakeLLMProvider, FakeSTTProvider
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -28,6 +35,18 @@ async def _clean_db():
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(text(f'TRUNCATE TABLE "{table.name}" CASCADE'))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _fake_providers():
+    """aimock_u3a_trd.md AC-1: 실제 Gemini/faster-whisper 대신 Fake로 어댑터 패턴 검증."""
+    fake_llm = FakeLLMProvider()
+    fake_stt = FakeSTTProvider()
+    app.dependency_overrides[get_llm_provider] = lambda: fake_llm
+    app.dependency_overrides[get_stt_provider] = lambda: fake_stt
+    yield fake_llm, fake_stt
+    app.dependency_overrides.pop(get_llm_provider, None)
+    app.dependency_overrides.pop(get_stt_provider, None)
 
 
 @pytest_asyncio.fixture

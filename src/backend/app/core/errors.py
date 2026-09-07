@@ -32,3 +32,15 @@ class ForbiddenError(AppError):
 class NotFoundError(AppError):
     status_code = 404
     code = "NOT_FOUND"
+
+
+class ConflictError(AppError):
+    status_code = 409
+    code = "CONFLICT"
+
+
+class ServiceUnavailableError(AppError):
+    """외부 AI 서비스(LLM/STT 등)가 설정 미비 등으로 쓸 수 없을 때."""
+
+    status_code = 503
+    code = "SERVICE_UNAVAILABLE"

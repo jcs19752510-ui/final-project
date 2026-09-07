@@ -11,6 +11,7 @@
 | [ADR-004](adr-004-media-capture-scope.md) | 실시간 미디어 처리 범위 축소 (WebRTC SFU 제거) + 원본 미디어 보관 정책 | 승인됨 | 2026-09-07 | 사용자 |
 | [ADR-005](adr-005-deployment-target.md) | 배포 인프라 (Kubernetes/GCP → 로컬/무료 PaaS) | 제안됨 (기본값 적용, 자동진행) | 2026-09-07 | AI 초안 → 사용자 확인 대기 |
 | [ADR-006](adr-006-account-deletion-policy.md) | 계정 탈퇴 시 데이터 삭제 정책 (소프트삭제 + 30일 유예 자동파기) | 승인됨 | 2026-09-07 | 사용자 |
+| [ADR-007](adr-007-code-execution-sandbox.md) | 라이브 코딩 실행 방식 (subprocess 완화 조치, 공개배포 전 재검토 필수) | 승인됨(자동진행) | 2026-09-07 | AI (사용자가 이번 세션 자동진행 승인) |
 
 ## 왜 원본 기획서와 이렇게 많이 달라졌는가
 

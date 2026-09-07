@@ -9,10 +9,22 @@ bcrypt==4.2.1
 pyjwt==2.10.1
 cryptography==44.0.0
 apscheduler==3.11.0
+pyseccomp==0.1.2
 python-multipart==0.0.20
 pgvector==0.3.6
 google-genai==2.22.0
 faster-whisper==1.2.1
+deepface==0.0.100
+tf-keras==2.21.0
+librosa==0.10.2.post1
+# deepface가 opencv-python을 자체 의존성으로 설치하는데, 버전을 안 박아두면
+# pip가 최신(5.0.0.93)을 깔았고 이 버전은 얼굴 검출용 haarcascade XML
+# 데이터 파일 자체를 wheel에 안 담고 있어(2026-09-08 실 컨테이너에서
+# "haarcascade_frontalface_default.xml ... violated" 에러로 발견)
+# DeepFace의 opencv 검출기가 항상 실패한다. 검증된 4.x로 고정.
+# opencv-python-headless는 별도로 깔지 않는다(같이 깔면 둘이 충돌해
+# `cv2.CascadeClassifier` 등이 깨짐 — 이것도 실제로 겪음).
+opencv-python==4.10.0.84
 
 # 테스트
 pytest==8.3.4

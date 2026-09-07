@@ -21,11 +21,23 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.ai.providers import get_llm_provider, get_stt_provider
+from app.ai.providers import (
+    get_emotion_analyzer,
+    get_llm_provider,
+    get_prosody_analyzer,
+    get_report_generator,
+    get_stt_provider,
+)
 from app.db import AsyncSessionLocal, Base, engine
 from app.main import app
 
-from fakes import FakeLLMProvider, FakeSTTProvider
+from fakes import (
+    FakeEmotionAnalyzer,
+    FakeLLMProvider,
+    FakeProsodyAnalyzer,
+    FakeReportGenerator,
+    FakeSTTProvider,
+)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -47,6 +59,27 @@ def _fake_providers():
     yield fake_llm, fake_stt
     app.dependency_overrides.pop(get_llm_provider, None)
     app.dependency_overrides.pop(get_stt_provider, None)
+
+
+@pytest.fixture(autouse=True)
+def _fake_report_generator():
+    """aimock_u4_trd.md AC-2: 실제 Gemini 대신 Fake로 리포트 생성 오케스트레이션 검증."""
+    fake_report = FakeReportGenerator()
+    app.dependency_overrides[get_report_generator] = lambda: fake_report
+    yield fake_report
+    app.dependency_overrides.pop(get_report_generator, None)
+
+
+@pytest.fixture(autouse=True)
+def _fake_emotion_prosody_analyzers():
+    """aimock_u3b_trd.md — 실제 DeepFace/librosa 모델 로딩 없이 고정값으로 검증."""
+    fake_emotion = FakeEmotionAnalyzer()
+    fake_prosody = FakeProsodyAnalyzer()
+    app.dependency_overrides[get_emotion_analyzer] = lambda: fake_emotion
+    app.dependency_overrides[get_prosody_analyzer] = lambda: fake_prosody
+    yield fake_emotion, fake_prosody
+    app.dependency_overrides.pop(get_emotion_analyzer, None)
+    app.dependency_overrides.pop(get_prosody_analyzer, None)
 
 
 @pytest_asyncio.fixture

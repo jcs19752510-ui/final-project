@@ -8,6 +8,7 @@
 """
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -128,6 +129,9 @@ async def _build_emotion_timeline(
             )
         ).all()
     )
+    # 2026-09-08(재발방지): 운영 환경에서 리포트 생성이 느려질 때 원인을
+    # 추측하지 않고 로그로 바로 확인할 수 있도록 단계별 소요시간을 남긴다.
+    started = time.monotonic()
     timeline = []
     for frame in frames:
         result = await analyzer.analyze_frame(media_service.read_media_bytes(frame))
@@ -138,6 +142,14 @@ async def _build_emotion_timeline(
                 "confidence": result.confidence,
             }
         )
+    elapsed = time.monotonic() - started
+    logger.info(
+        "표정 분석 완료(interview_id=%s): 프레임 %d개, %.2f초 소요(평균 %.2f초/프레임)",
+        interview_id,
+        len(frames),
+        elapsed,
+        elapsed / len(frames) if frames else 0.0,
+    )
     return timeline
 
 
@@ -155,6 +167,7 @@ async def _build_voice_prosody(
             )
         ).all()
     )
+    started = time.monotonic()
     prosody = []
     for clip in clips:
         result = await analyzer.analyze(media_service.read_media_bytes(clip))
@@ -165,6 +178,14 @@ async def _build_voice_prosody(
                 "energy_mean": result.energy_mean,
             }
         )
+    elapsed = time.monotonic() - started
+    logger.info(
+        "음성 운율 분석 완료(interview_id=%s): 오디오 %d개, %.2f초 소요(평균 %.2f초/클립)",
+        interview_id,
+        len(clips),
+        elapsed,
+        elapsed / len(clips) if clips else 0.0,
+    )
     return prosody
 
 
@@ -217,9 +238,21 @@ async def run_report_generation(
                 code_submissions=[s.code for s in submissions],
                 keywords=keywords,
             )
+            run_started = time.monotonic()
+            llm_started = time.monotonic()
             result = await generator.generate(context)
+            logger.info(
+                "리포트 LLM 요약 완료(interview_id=%s): %.2f초 소요",
+                interview_id,
+                time.monotonic() - llm_started,
+            )
             emotion_timeline = await _build_emotion_timeline(db, interview_id, emotion_analyzer)
             voice_prosody = await _build_voice_prosody(db, interview_id, prosody_analyzer)
+            logger.info(
+                "리포트 생성 전체 완료(interview_id=%s): 총 %.2f초 소요",
+                interview_id,
+                time.monotonic() - run_started,
+            )
 
             report = await _fetch_report_row(db, interview_id)
             if report is None:

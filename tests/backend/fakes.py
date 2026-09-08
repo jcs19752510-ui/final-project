@@ -26,11 +26,14 @@ class FakeLLMProvider(LLMProvider):
 
 
 class FakeReportGenerator(ReportGenerator):
-    def __init__(self):
+    def __init__(self, raise_exc: Exception | None = None):
         self.call_count = 0
+        self.raise_exc = raise_exc  # 2026-09-08(u4 TRD §3-1) — 백그라운드 실패 경로 테스트용
 
     async def generate(self, context: ReportContext) -> ReportResult:
         self.call_count += 1
+        if self.raise_exc is not None:
+            raise self.raise_exc
         return ReportResult(
             technical_score=4,
             communication_score=4,

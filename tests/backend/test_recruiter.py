@@ -26,6 +26,7 @@ async def _make_completed_interview_with_report(
     db_session.add(
         EvaluationReport(
             interview_id=interview.id,
+            status="completed",  # 2026-09-08(u4 TRD §0-2) — NOT NULL 컬럼, 완료된 리포트로 시드
             technical_score=technical,
             communication_score=communication,
             cultural_fit_score=cultural,

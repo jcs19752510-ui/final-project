@@ -550,3 +550,38 @@ A0 인수인계 §3(편차)는 "몰랐는데 다르게 나온 것"을 기록하�
   `내부테스트결과서/U2a보완_STT전환및질문개수제한_20260908172949.md`.
   **다음 액션(사람 필요)**: 이 변경분 git 커밋·푸시 → Render 재배포 →
   운영 환경에서 두 문제가 실제로 해소됐는지 최종 재확인.
+- **피드백 리포트 생성 비동기화(2026-09-08, 같은 날 계속) — 사용자가
+  운영 환경에서 "리포트 생성이 1분 이상 걸린다" 재보고, "20년차 기준으로
+  절대 틀리면 안 됨" 명시적 강조 후 진행**: 원인은
+  `report_service.generate_report()`가 HTTP 요청 하나 안에서 LLM 호출 +
+  턴마다 저장된 `video_frame` 전부를 DeepFace로, `audio` 전부를
+  librosa로 순차 동기 분석하던 것 — **마스터 TRD 원래 아키텍처 다이어그램
+  에는 이미 "표정/음성운율 분석은 BackgroundTasks로 비동기 처리"라고
+  명시돼 있었는데, 실제 U4 구현 시 이 부분이 누락돼 전부 동기로 짜여
+  있었음**(새 요구사항이 아니라 원본 설계를 실제로 구현하는 것, 원본
+  우선 원칙으로 발견). 코드를 짜기 전에 먼저 **"httpx `ASGITransport`가
+  FastAPI `BackgroundTasks`를 언제 실행하는가"를 별도 실험으로 실측
+  검증**(테스트 설계가 틀린 가정 위에 서지 않도록 — 결과: 응답이 조립된
+  후, `client.post()`가 반환되기 전에 전부 실행됨을 확인) 후 설계 착수.
+  `evaluation_reports`에 `status`/`error_message`/`processing_started_at`
+  컬럼 추가(마이그레이션 `a1c3e7f2b904`, 기존 행은 `completed`로 백필),
+  `report_service`를 `start_report_generation`(빠른 시작, 중복 실행
+  방지 + IntegrityError 경합 복구 + 5분 좀비 작업 복구)과
+  `run_report_generation`(백그라운드 전용, 요청 세션이 아닌 독립
+  `AsyncSessionLocal` 사용 — FastAPI BackgroundTasks의 잘 알려진 함정
+  회피)으로 분리. `POST /report`는 이제 항상 `202`+`processing`만 즉시
+  반환(더 이상 503 없음 — AI 실패는 `status=failed`+안전한 일반 메시지로
+  표현, 원본 예외 텍스트는 서버 로그에만 남기고 사용자에게 노출 안 함).
+  프론트(`ReportPage.tsx`)는 2초 간격 폴링 도입, `RecruiterReportPage.tsx`
+  도 상태 인지하도록 갱신. pytest 63 passed(신규 4건 포함, 회귀 없음),
+  ruff/mypy 클린, 프론트 tsc/vitest(17개, 신규 2건)/oxlint 클린.
+  **실제 Docker(uvicorn) 컨테이너로 종단 간 검증**: 실제 POST 응답
+  0.155초(이전 1분+ 대비 개선 실측), 폴링 1초 후 실제 Groq 결과로
+  completed 전환 확인. **`curl` 2개를 진짜 동시에 발사해 경합 상황을
+  실제 서버로 재현** — (1) 이미 있는 리포트 재생성 동시 요청, (2) 첫
+  생성 시 INSERT 유니크 제약 경합 유도 — 두 경우 다 DB에 정확히 1개
+  행만 남고 에러/중복 없음을 실제로 확인(유닛테스트로 결정론적 재현이
+  어려운 DB 레벨 경쟁 상태를 실제 서버 테스트로 보완). 상세:
+  `내부테스트결과서/U4보완_리포트생성비동기화_20260908180942.md`.
+  **다음 액션(사람 필요)**: 이 변경분도 git 커밋·푸시 → Render 재배포 →
+  운영 환경에서 리포트 생성 화면이 더 이상 멈추지 않는지 최종 재확인.

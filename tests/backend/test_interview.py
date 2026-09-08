@@ -147,28 +147,40 @@ async def test_ac3_long_answer_skips_llm_call(client, _fake_providers):
 
 
 async def test_ac4_llm_end_signal_completes_interview(client, db_session, _fake_providers):
+    """2026-09-08 갱신 — AC-9(u2a, 최소 질문 개수 보장)이 추가되면서 기본
+    min(5)보다 적은 턴에서는 LLM이 end_interview를 반환해도 서버가 막는다
+    (별도 테스트: test_u2a_ac9_...). 이 테스트는 원래의 AC-4("LLM 종료 신호를
+    그대로 반영") 자체를 검증하는 게 목적이므로, min 제약이 걸리지 않도록
+    min_questions를 1로 낮춰서 두 규칙이 서로 배타적이지 않음을 함께 보인다."""
+    from app.config import settings
+
     fake_llm, _fake_stt = _fake_providers
     fake_llm.action = "end_interview"
     fake_llm.reply_text = "면접을 종료하겠습니다. 수고하셨습니다."
 
-    token = await _signup_and_login(client)
-    start = await client.post(
-        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
-    )
-    interview_id = start.json()["interview_id"]
+    original_min = settings.interview_min_questions
+    settings.interview_min_questions = 1
+    try:
+        token = await _signup_and_login(client)
+        start = await client.post(
+            "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+        )
+        interview_id = start.json()["interview_id"]
 
-    resp = await client.post(
-        f"/api/v1/interviews/{interview_id}/turns",
-        headers=_auth(token),
-        data={"turn_index": "0"},
-        files={"audio": ("a.webm", "짧은 답변입니다.".encode("utf-8"), "audio/webm")},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["ended"] is True
+        resp = await client.post(
+            f"/api/v1/interviews/{interview_id}/turns",
+            headers=_auth(token),
+            data={"turn_index": "0"},
+            files={"audio": ("a.webm", "짧은 답변입니다.".encode("utf-8"), "audio/webm")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ended"] is True
 
-    interview = await db_session.get(Interview, interview_id)
-    assert interview.status == "completed"
-    assert interview.ended_at is not None
+        interview = await db_session.get(Interview, interview_id)
+        assert interview.status == "completed"
+        assert interview.ended_at is not None
+    finally:
+        settings.interview_min_questions = original_min
 
 
 async def test_ac5_manual_end(client, db_session):
@@ -258,6 +270,144 @@ async def test_u3a_ac4_llm_schema_violation_falls_back():
 
     result2 = _parse_or_fallback('{"reply_text": "hi", "action": "not_a_valid_action"}')
     assert result2.reply_text == FALLBACK_REPLY
+
+
+async def test_u2a_ac9_min_question_count_prevents_early_end_via_api(client, db_session, _fake_providers):
+    """AC-9(u2a, 2026-09-08 추가) — 운영 환경에서 실사용 중 발견한 문제(질문
+    개수 제한이 전혀 없어 25턴 넘게 안 끝남)의 반대 경계: LLM이 최소 질문
+    개수(기본 5개, 오프닝 포함) 미만에서 종료를 원해도 서버가 계속 진행시켜야
+    한다."""
+    fake_llm, _fake_stt = _fake_providers
+    fake_llm.action = "end_interview"
+    fake_llm.reply_text = "면접을 마치겠습니다."
+
+    token = await _signup_and_login(client)
+    start = await client.post(
+        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+    )
+    interview_id = start.json()["interview_id"]
+
+    resp = await client.post(
+        f"/api/v1/interviews/{interview_id}/turns",
+        headers=_auth(token),
+        data={"turn_index": "0"},
+        files={"audio": ("a.webm", "답변입니다.".encode("utf-8"), "audio/webm")},
+    )
+    assert resp.status_code == 200
+    # 오프닝 질문 1개뿐(asked_count=1) < 기본 min(5) → 서버가 종료를 막아야 함
+    assert resp.json()["ended"] is False
+    assert resp.json()["question_text"] != fake_llm.reply_text
+
+    interview = await db_session.get(Interview, interview_id)
+    assert interview.status == "live"
+
+
+async def test_u2a_ac10_max_question_count_forces_end_via_api(client, db_session, _fake_providers):
+    """AC-10(u2a, 2026-09-08 추가) — 운영 환경 실사용 중 면접이 턴 25까지
+    안 끝나는 문제를 실제로 발견해 추가한 안전장치. LLM이 계속 질문하려
+    해도 최대 질문 개수에 도달하면 서버가 강제 종료해야 한다."""
+    from app.config import settings
+
+    fake_llm, _fake_stt = _fake_providers
+    fake_llm.action = "ask_question"
+    fake_llm.reply_text = "다음 질문입니다."
+
+    original_max = settings.interview_max_questions
+    settings.interview_max_questions = 1  # 오프닝 1개만으로 바로 상한 도달하게 축소
+    try:
+        token = await _signup_and_login(client)
+        start = await client.post(
+            "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+        )
+        interview_id = start.json()["interview_id"]
+
+        resp = await client.post(
+            f"/api/v1/interviews/{interview_id}/turns",
+            headers=_auth(token),
+            data={"turn_index": "0"},
+            files={"audio": ("a.webm", "답변입니다.".encode("utf-8"), "audio/webm")},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ended"] is True
+        assert resp.json()["question_text"] != fake_llm.reply_text
+
+        interview = await db_session.get(Interview, interview_id)
+        assert interview.status == "completed"
+    finally:
+        settings.interview_max_questions = original_max
+
+
+async def test_u2a_enforce_bounds_allows_end_exactly_at_min(monkeypatch):
+    """`_enforce_question_count_bounds` 경계값 단위 테스트 — asked_count가
+    정확히 min과 같으면(딱 min개를 채운 상태) LLM의 종료 결정을 그대로
+    허용해야 한다(과도하게 막지 않음)."""
+    from app.ai.llm import LLMTurnResult
+    from app.config import settings
+    from app.services.interview_service import _enforce_question_count_bounds
+
+    monkeypatch.setattr(settings, "interview_min_questions", 5)
+
+    result = LLMTurnResult(reply_text="마치겠습니다.", action="end_interview", evaluation=None)
+    out = _enforce_question_count_bounds(result, asked_count=5, candidates=[])
+    assert out.action == "end_interview"
+    assert out.reply_text == "마치겠습니다."
+
+
+async def test_u2a_enforce_bounds_blocks_end_before_min_uses_candidate(monkeypatch):
+    from app.ai.llm import LLMTurnResult
+    from app.config import settings
+    from app.models.question import Question
+    from app.services.interview_service import _enforce_question_count_bounds
+
+    monkeypatch.setattr(settings, "interview_min_questions", 5)
+
+    result = LLMTurnResult(reply_text="마치겠습니다.", action="end_interview", evaluation=None)
+    candidate = Question(content="후보 질문 내용", category="backend", difficulty=1)
+    out = _enforce_question_count_bounds(result, asked_count=4, candidates=[candidate])
+    assert out.action == "ask_question"
+    assert out.reply_text == "후보 질문 내용"
+
+
+async def test_u2a_enforce_bounds_blocks_end_before_min_falls_back_without_candidates(monkeypatch):
+    from app.ai.llm import LLMTurnResult
+    from app.config import settings
+    from app.services.interview_service import (
+        EARLY_END_FALLBACK_QUESTION,
+        _enforce_question_count_bounds,
+    )
+
+    monkeypatch.setattr(settings, "interview_min_questions", 5)
+
+    result = LLMTurnResult(reply_text="마치겠습니다.", action="end_interview", evaluation=None)
+    out = _enforce_question_count_bounds(result, asked_count=2, candidates=[])
+    assert out.action == "ask_question"
+    assert out.reply_text == EARLY_END_FALLBACK_QUESTION
+
+
+async def test_u2a_enforce_bounds_allows_ask_below_max(monkeypatch):
+    from app.ai.llm import LLMTurnResult
+    from app.config import settings
+    from app.services.interview_service import _enforce_question_count_bounds
+
+    monkeypatch.setattr(settings, "interview_max_questions", 10)
+
+    result = LLMTurnResult(reply_text="다음 질문", action="ask_question", evaluation=None)
+    out = _enforce_question_count_bounds(result, asked_count=9, candidates=[])
+    assert out.action == "ask_question"
+    assert out.reply_text == "다음 질문"
+
+
+async def test_u2a_enforce_bounds_forces_end_at_max(monkeypatch):
+    from app.ai.llm import LLMTurnResult
+    from app.config import settings
+    from app.services.interview_service import CLOSING_MESSAGE, _enforce_question_count_bounds
+
+    monkeypatch.setattr(settings, "interview_max_questions", 10)
+
+    result = LLMTurnResult(reply_text="다음 질문", action="ask_question", evaluation=None)
+    out = _enforce_question_count_bounds(result, asked_count=10, candidates=[])
+    assert out.action == "end_interview"
+    assert out.reply_text == CLOSING_MESSAGE
 
 
 async def test_ac8_missing_gemini_key_raises_service_unavailable_not_500():

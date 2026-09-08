@@ -4,7 +4,7 @@ from app.ai.emotion import DeepFaceEmotionAnalyzer, EmotionAnalyzer
 from app.ai.llm import GroqProvider, LLMProvider
 from app.ai.prosody import LibrosaProsodyAnalyzer, ProsodyAnalyzer
 from app.ai.report import GroqReportGenerator, ReportGenerator
-from app.ai.stt import FasterWhisperProvider, STTProvider
+from app.ai.stt import GroqWhisperProvider, STTProvider
 from app.config import settings
 
 # 2026-09-08: Gemini → Groq 전환(ADR-002에 원래 계획돼 있던 방향).
@@ -14,7 +14,12 @@ from app.config import settings
 # app/ai/llm.py, app/ai/report.py에 그대로 남겨둠 — 필요 시 여기 두 줄만
 # 되돌리면 재전환 가능(어댑터 패턴의 이점).
 _llm_provider: LLMProvider = GroqProvider()
-_stt_provider: STTProvider = FasterWhisperProvider(settings.stt_model_size)
+# 2026-09-08: faster-whisper(로컬) → Groq 호스팅 Whisper API 전환(ADR-008).
+# Render 저사양 인스턴스에서 로컬 STT 추론이 10초 이상 걸리는 것을 실제
+# 운영 환경에서 확인 → 연산을 Groq로 위임해 인스턴스 사양 의존성 제거.
+# FasterWhisperProvider 구현은 app/ai/stt.py에 그대로 남겨둠 — 필요 시
+# 이 한 줄만 되돌리면 재전환 가능(어댑터 패턴의 이점).
+_stt_provider: STTProvider = GroqWhisperProvider(settings.groq_stt_model)
 _report_generator: ReportGenerator = GroqReportGenerator()
 _emotion_analyzer: EmotionAnalyzer = DeepFaceEmotionAnalyzer()
 _prosody_analyzer: ProsodyAnalyzer = LibrosaProsodyAnalyzer()

@@ -47,9 +47,9 @@ flowchart TD
         S2["AI 파이프라인 서비스<br/>BackgroundTasks"]
     end
 
-    subgraph AI["AI 구성요소 (전부 무료)"]
-        A1["faster-whisper<br/>(로컬 STT)"]
-        A2["Gemini API 무료 티어<br/>(LLM 오케스트레이션 + Vision)"]
+    subgraph AI["AI 구성요소 (전부 무료 — 2026-09-08 갱신: STT/LLM 모두 Groq로<br/>일원화. ADR-002/ADR-008 참조, 로컬 대안(faster-whisper/Gemini)은<br/>어댑터 코드로 남아있으나 기본 조립에서는 빠짐)"]
+        A1["Groq 호스팅 Whisper API<br/>(STT, ADR-008)"]
+        A2["Groq API 무료 티어<br/>(LLM 오케스트레이션, ADR-002 갱신)"]
         A3["DeepFace + librosa<br/>(표정/음성운율, 로컬)"]
     end
 
@@ -73,8 +73,8 @@ flowchart TD
 sequenceDiagram
     participant U as 지원자(브라우저)
     participant API as Core API (FastAPI)
-    participant STT as faster-whisper
-    participant LLM as Gemini API
+    participant STT as Groq Whisper API(ADR-008)
+    participant LLM as Groq API(ADR-002 갱신)
     participant DB as PostgreSQL
 
     U->>API: "답변 시작" 클릭 → 로컬 녹화 시작
@@ -110,7 +110,7 @@ sequenceDiagram
 
 | ID | 요구사항 | 원본(REQ-N) 대비 변경 | 관련 ADR | 실제 구현 상태(2026-09-08) |
 |---|---|---|---|---|
-| N-001 | 턴 종료 후 다음 질문까지 응답 지연 목표 8초 이내(로컬 CPU 기준, 무료 티어 LLM 응답시간 포함) | 원안 "800ms~1.5s 스트리밍"을 턴 기반 배치 처리로 대체 | ADR-001, ADR-002 | **미실측** — GEMINI_API_KEY를 2026-09-08에 처음 확보해 실제 응답은 나왔지만(정성적으로 수 초 내 응답), 8초 목표치를 정량적으로 측정한 적은 없음. 목표(target)로 유지, "보장"은 아님 |
+| N-001 | 턴 종료 후 다음 질문까지 응답 지연 목표 8초 이내(무료 티어 LLM/STT 응답시간 포함) | 원안 "800ms~1.5s 스트리밍"을 턴 기반 배치 처리로 대체 | ADR-001, ADR-002, ADR-008 | **2026-09-08 갱신**: Render 운영 배포 후 사용자가 턴 응답 10초 이상을 실제로 보고해 목표 위반을 확인 — 원인은 로컬 `faster-whisper`가 Render 저사양 인스턴스(0.5 vCPU)에서 CPU 바운드로 느린 것(ADR-008 참조). STT를 Groq 호스팅 API로 전환 후 **로컬 개발 환경에서 실측**: 전체 턴 처리(오디오 저장+STT+RAG 조회+LLM) 약 1.8초, STT 단독 약 0.5초(내부테스트결과서 참조) — 목표(8초) 대비 크게 개선. 다만 **Render 운영 환경에서의 재실측은 아직 안 됨**(코드는 로컬에만 반영, git 커밋/푸시 및 Render 재배포는 사용자가 직접 수행해야 함 — CLAUDE.md git 작업 금지 규칙) |
 | N-002 | 동시 접속: 데모/시연 수준(동시 1~5세션)만 보장, 수평 확장 미지원 | 원안 "수백 세션 Kubernetes 확장"을 제외(Won't) | ADR-005 | 부하 테스트 자체를 ADR-005로 범위 밖(Won't) 처리 — "이렇게 되도록 설계함"이지 "실측 검증함"은 아님 |
 | N-003 | 생체 데이터 보호: 비밀번호 해시, DB 접속정보 환경변수, 원본 오디오/비디오는 **암호화 저장 후 지원자 요청 시(또는 계정 파기 연쇄 시) 물리 삭제** | 원안 "즉시 삭제"에서 "지원자가 직접 삭제 요청 전까지 암호화 보관"으로 변경(2026-09-07 사용자 선택) | ADR-004 | 구현·검증 완료. (2026-09-08 발견·수정: 면접 턴 제출 흐름이 한동안 이 저장을 실제로 호출하지 않던 버그가 있었으나 연결·재검증 완료) |
 | N-004 | 공정성: 채점 프롬프트에 "인구통계적 특징 언급 금지" 명시, 판단 근거를 리포트에 노출(설명가능성) | 원안 유지(다양한 데이터셋 편향 검증은 4주 내 범위 밖 — Won't). **2026-09-08 정정**: "key_observations"라는 필드명은 실제로는 리포트가 아니라 **면접 턴별 LLM 평가**(`app/ai/llm.py`의 `evaluation.key_observations`)에서만 쓰이고, 최종 리포트에는 집계되지 않음 — 리포트의 판단 근거는 `star_analysis`/`summary_text`(자유 텍스트)가 담당 | - | 인구통계 언급 금지 프롬프트는 실제 시스템 프롬프트에 있음(확인됨). 판단 근거 노출 자체는 `star_analysis`/`summary_text`로 되고 있으나 "key_observations"라는 이름의 리포트 필드는 없음(용어만 정정, 기능은 다른 이름으로 존재) |

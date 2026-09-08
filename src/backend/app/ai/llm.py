@@ -31,7 +31,13 @@ SYSTEM_PROMPT = (
     "구체적인 내용(언급한 기술/프로젝트/경험)을 이어받아 새로운 후속 질문을 "
     "만드십시오. 이미 [대화 이력]에 나온 것과 같거나 거의 같은 질문을 "
     "다시 하지 마십시오(2026-09-08 추가 — 실사용 중 동일 질문 반복 문제 "
-    "발견). 반드시 지정된 JSON 스키마로만 응답하십시오."
+    "발견). [면접 진행 상황]에 안내되는 최소/최대 질문 개수를 반드시 "
+    "지키십시오 — 최소 개수 미만이면 답변이 충분해 보여도 end_interview를 "
+    "선택하지 말고 새 질문을 이어가고, 최대 개수에 도달했으면 반드시 "
+    "마무리 인사와 함께 end_interview를 선택하십시오(2026-09-08 추가 — "
+    "운영 환경에서 면접이 25턴 넘게 끝나지 않는 문제를 실제로 발견해 "
+    "추가된 규칙, aimock_u2a_trd.md §3 참조). "
+    "반드시 지정된 JSON 스키마로만 응답하십시오."
 )
 
 
@@ -40,6 +46,13 @@ class ConversationContext:
     job_role: str
     history: list[dict[str, str]] = field(default_factory=list)  # [{speaker, text}]
     candidate_questions: list[str] = field(default_factory=list)
+    # ADR-008 연계(2026-09-08): 면접이 안 끝나는 문제 수정용 — 서버가
+    # question_number/min/max를 계산해 넘겨주면 LLM이 진행 상황을 인지하고
+    # 최소/최대 질문 개수 규칙을 따를 수 있다. interview_service.submit_turn
+    # 이 실제 값을 채워서 생성한다.
+    question_number: int = 1
+    min_questions: int = 5
+    max_questions: int = 10
 
 
 class LLMTurnResult(BaseModel):
@@ -61,6 +74,12 @@ def _build_user_message(context: ConversationContext) -> str:
         f"직무: {context.job_role}\n\n"
         f"[대화 이력]\n{history_text}\n\n"
         f"[참고 가능한 질문 후보]\n{hints}\n\n"
+        f"[면접 진행 상황] 지금까지 {context.question_number - 1}개 질문을 "
+        f"했습니다. 이번에 질문을 이어가면 {context.question_number}번째 "
+        f"질문이 됩니다. 목표 질문 개수는 최소 {context.min_questions}개, "
+        f"최대 {context.max_questions}개입니다. 최소 개수 미만이면 아직 "
+        f"종료하지 마십시오. 최대 개수에 도달했다면 더 질문하지 말고 "
+        f"end_interview로 마무리하십시오.\n\n"
         '다음 JSON 스키마로만 응답하세요: '
         '{"reply_text": "면접관 발화(질문 또는 종료 인사)", '
         '"action": "ask_question 또는 end_interview", '

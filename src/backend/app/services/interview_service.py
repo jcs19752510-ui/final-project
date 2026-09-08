@@ -106,7 +106,13 @@ async def submit_turn(
 
     history = await _fetch_history(db, interview.id)
     history.append({"speaker": "user", "text": user_text})
-    candidates = await question_service.retrieve_candidates(db, limit=3)
+    # 2026-09-08: 이미 이번 면접에서 나온 질문은 후보에서 제외 — 같은
+    # 질문이 다시 뽑혀 LLM이 그걸 그대로 반복 질문하는 문제를 실제로
+    # 발견해 수정(원인 상세는 question_service.retrieve_candidates 참조).
+    already_asked = [h["text"] for h in history if h["speaker"] == "ai"]
+    candidates = await question_service.retrieve_candidates(
+        db, limit=3, exclude_contents=already_asked
+    )
     context = ConversationContext(
         job_role=interview.job_role,
         history=history,

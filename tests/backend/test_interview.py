@@ -229,6 +229,26 @@ async def test_u3a_ac3_retrieve_candidates_filters_by_category(db_session):
     assert all(r.category == "backend" for r in results)
 
 
+async def test_ac9_retrieve_candidates_excludes_already_asked_questions(db_session):
+    """2026-09-08 회귀 테스트 — 실사용 중 발견한 "AI가 같은 질문을 계속
+    반복한다" 버그. 원인은 이 함수가 이미 나온 질문도 다시 무작위로 뽑을
+    수 있었던 것(LLM 제공자와 무관, 실제 Groq로 재현 확인). 이미 나온
+    질문은 후보에서 빠져야 한다."""
+    from app.services import question_service
+
+    await question_service.seed_if_empty(db_session)
+    all_questions = await question_service.retrieve_candidates(db_session, limit=100)
+    assert len(all_questions) >= 2  # 시드 질문이 최소 2개는 있어야 의미있는 테스트
+
+    already_asked = [q.content for q in all_questions[:-1]]  # 마지막 1개만 안 나온 걸로
+    remaining = await question_service.retrieve_candidates(
+        db_session, limit=100, exclude_contents=already_asked
+    )
+    remaining_contents = {q.content for q in remaining}
+    assert remaining_contents.isdisjoint(already_asked)
+    assert all_questions[-1].content in remaining_contents
+
+
 async def test_u3a_ac4_llm_schema_violation_falls_back():
     from app.ai.llm import FALLBACK_REPLY, _parse_or_fallback
 

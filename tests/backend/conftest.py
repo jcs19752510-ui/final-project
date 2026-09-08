@@ -7,7 +7,12 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault(
-    "DATABASE_URL", "postgresql+asyncpg://aimock:aimock_dev_only@localhost:55432/aimock"
+    # ⚠️ 2026-09-08 심각한 버그 수정: 이전엔 실제 개발용 DB("aimock")를
+    # 그대로 가리키고 있었음 — 매 테스트 전 전체 TRUNCATE를 실행하는
+    # `_clean_db` 픽스처 때문에, pytest를 돌릴 때마다 실사용 중이던 회원
+    # 가입 계정/면접 데이터가 전부 삭제되고 있었다(사용자가 실제로 로그인
+    # 안 되는 문제로 발견). 반드시 별도 DB("aimock_test")를 써야 한다.
+    "DATABASE_URL", "postgresql+asyncpg://aimock:aimock_dev_only@localhost:55432/aimock_test"
 )
 os.environ.setdefault("JWT_SECRET", "test-only-secret")
 os.environ.setdefault("MEDIA_ENCRYPTION_KEY", "k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70=")

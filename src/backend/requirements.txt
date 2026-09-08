@@ -13,6 +13,7 @@ pyseccomp==0.1.2
 python-multipart==0.0.20
 pgvector==0.3.6
 google-genai==2.22.0
+groq==1.7.0
 faster-whisper==1.2.1
 deepface==0.0.100
 tf-keras==2.21.0

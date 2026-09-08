@@ -40,6 +40,10 @@ export function CandidateHomePage() {
         <form onSubmit={handleStart}>
           <label htmlFor="job-role">지원 직무</label>
           <input id="job-role" value={jobRole} onChange={(e) => setJobRole(e.target.value)} required />
+          <p className="hint">
+            입력하신 직무에 맞춰 AI 면접관이 질문을 생성합니다. 원하는 직무로
+            자유롭게 바꿔서 시작할 수 있습니다.
+          </p>
           {error && (
             <p className="form-error" role="alert">
               {error}

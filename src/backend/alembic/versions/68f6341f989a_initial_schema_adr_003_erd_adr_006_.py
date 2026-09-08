@@ -37,7 +37,7 @@ def upgrade() -> None:
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('password_hash', sa.String(), nullable=False),
     sa.Column('role', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('purge_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
@@ -60,7 +60,7 @@ def upgrade() -> None:
     sa.Column('language', sa.String(), nullable=False),
     sa.Column('code', sa.Text(), nullable=False),
     sa.Column('exec_result_json', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['interview_id'], ['interviews.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -72,7 +72,7 @@ def upgrade() -> None:
     sa.Column('cultural_fit_score', sa.Integer(), nullable=True),
     sa.Column('summary_text', sa.Text(), nullable=True),
     sa.Column('details_json', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['interview_id'], ['interviews.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('interview_id')
@@ -84,7 +84,7 @@ def upgrade() -> None:
     sa.Column('kind', sa.String(), nullable=False),
     sa.Column('storage_path', sa.String(), nullable=False),
     sa.Column('encrypted', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['interview_id'], ['interviews.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -96,7 +96,7 @@ def upgrade() -> None:
     sa.Column('speaker', sa.String(), nullable=False),
     sa.Column('text', sa.Text(), nullable=False),
     sa.Column('audio_ref', sa.String(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['interview_id'], ['interviews.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['question_id'], ['questions.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -106,7 +106,7 @@ def upgrade() -> None:
     sa.Column('interview_id', sa.UUID(), nullable=False),
     sa.Column('image_ref', sa.String(), nullable=False),
     sa.Column('ai_feedback_text', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default='now()', nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['interview_id'], ['interviews.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

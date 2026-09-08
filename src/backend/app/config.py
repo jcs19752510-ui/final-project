@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     media_storage_dir: str = "uploads"
     account_deletion_grace_days: int = 30
     gemini_api_key: str | None = None  # ADR-002 — https://aistudio.google.com 무료 키
+    groq_api_key: str | None = None  # ADR-002 — https://console.groq.com 무료 키(2026-09-08, Gemini 무료 티어 일일 한도 소진 대응으로 전환)
     stt_model_size: str = "tiny"
     turn_max_answer_chars: int = 800  # aimock_u2a_trd.md §3 (F-003 대체)
 

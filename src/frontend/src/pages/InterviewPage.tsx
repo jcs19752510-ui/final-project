@@ -21,7 +21,6 @@ export function InterviewPage() {
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const videoStreamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // U3-b(표정 분석) — 면접 화면 진입 시 카메라를 한 번만 켜서 작은
   // 미리보기로 계속 띄워두고(지원자가 촬영 중임을 눈으로 확인할 수 있게),
@@ -54,13 +53,23 @@ export function InterviewPage() {
   function captureFrameBlob(): Promise<Blob | null> {
     return new Promise((resolve) => {
       const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || !cameraReady) {
+      // 2026-09-08 버그 수정: 예전엔 화면에서 숨긴(hidden, display:none)
+      // <canvas> DOM 엘리먼트를 재사용했는데, 실제 사용자 테스트에서 캡처된
+      // 프레임 14장이 전부 완전히 새까맣게 찍히는 것을 발견했다(표정분석이
+      // 계속 "unknown"으로 나온 진짜 원인 — DeepFace 문제가 아니었음).
+      // display:none 캔버스에 비디오 프레임을 그리면 일부 브라우저(특히
+      // GPU 가속 비디오 디코드 환경)에서 빈 화면이 찍히는 알려진 문제와
+      // 일치 — DOM에 아예 붙이지 않는 인메모리 캔버스로 교체해 회피.
+      // video.videoWidth가 아직 0이면(카메라는 열렸지만 첫 프레임이 아직
+      // 디코딩되기 전) 캡처를 건너뛴다 — 빈 화면을 억지로 찍는 대신
+      // 이번 턴은 표정 데이터 없이 넘어가고 다음 턴에 다시 시도.
+      if (!video || !cameraReady || video.videoWidth === 0 || video.videoHeight === 0) {
         resolve(null);
         return;
       }
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         resolve(null);
@@ -149,7 +158,6 @@ export function InterviewPage() {
 
       <div className="camera-preview">
         <video ref={videoRef} autoPlay muted playsInline />
-        <canvas ref={canvasRef} hidden />
         {cameraReady && <span className="camera-live-badge">촬영 중</span>}
         {cameraError && <p className="hint">{cameraError}</p>}
       </div>

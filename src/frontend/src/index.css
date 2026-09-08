@@ -250,6 +250,68 @@ button.danger:hover {
   border-radius: 4px;
 }
 
+.report-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.report-details section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.report-details h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.pass-badge {
+  align-self: flex-start;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.pass-badge.pass {
+  background: #e3f7e9;
+  color: #1a7a3d;
+}
+
+.pass-badge.fail {
+  background: #fbe9e7;
+  color: var(--color-danger);
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.keyword-tag {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.report-table th,
+.report-table td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .page-loading {
   text-align: center;
   color: var(--color-muted);

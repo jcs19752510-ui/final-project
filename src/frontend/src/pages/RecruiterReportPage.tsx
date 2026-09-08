@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { recruiterApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
+import { ReportDetails } from "../components/ReportDetails";
 import type { ReportResponse } from "../api/types";
 
 export function RecruiterReportPage() {
@@ -31,16 +32,24 @@ export function RecruiterReportPage() {
       {report && (
         <div className="card">
           <div className="score-row">
-            <span>기술: {report.technical_score ?? "-"}</span>
-            <span>커뮤니케이션: {report.communication_score ?? "-"}</span>
-            <span>조직 적합성: {report.cultural_fit_score ?? "-"}</span>
+            <ScoreBadge label="기술" value={report.technical_score} />
+            <ScoreBadge label="커뮤니케이션" value={report.communication_score} />
+            <ScoreBadge label="조직 적합성" value={report.cultural_fit_score} />
           </div>
           <h3>요약</h3>
           <p>{report.summary_text ?? "요약 정보가 없습니다."}</p>
-          <h3>상세</h3>
-          <pre className="output-block">{JSON.stringify(report.details_json, null, 2)}</pre>
+          <ReportDetails details={report.details_json} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ScoreBadge({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="score-badge">
+      <span className="score-label">{label}</span>
+      <span className="score-value">{value ?? "-"}</span>
     </div>
   );
 }

@@ -490,3 +490,63 @@ A0 인수인계 §3(편차)는 "몰랐는데 다르게 나온 것"을 기록하�
   마스터 TRD 라인 검토 상세 결과(문서 문구가 실제 구현보다 과장된 부분
   등)는 `docs/trd/aimock_master_trd_review_20260908.md` — 사람 승인
   대기 중.
+- **(같은 날 이후 진행분 — 상세 로그는 `docs/handoff/aimock_a0_handoff.md`
+  §2 참조, 여기는 요약만)** Gemini 무료 티어 일일 쿼터 소진 발견 →
+  Groq로 전환(재전환 가능한 어댑터 구조 유지), 전환 검증 중 "동일 질문
+  반복" 버그가 LLM 제공자 문제가 아니라 `question_service`의 질문 후보
+  중복 제거 누락이었음을 실측으로 확인해 수정, 로컬 `pytest`가 실제
+  개발 DB를 매번 TRUNCATE하던 심각한 데이터 유실 버그 발견·수정
+  (`tests/backend/conftest.py`), ADR-007 1단계 보안 강화(seccomp+비root
+  권한하락) 완료·실제 exploit 스크립트로 검증, U3-b(DeepFace+librosa)
+  엔진과 실시간 웹캠 캡처 UI 구현.
+- **리포트 화면 검은 화면 캡처 버그 발견·수정 + 화면 재설계 + TRD
+  동기화(2026-09-08)**: 사용자가 공유한 실제 리포트 화면에서 표정
+  타임라인이 전부 "unknown"인 것을 실제 DB 미디어를 복호화해 확인한
+  결과, 캡처된 프레임이 전부 검은 이미지였음을 발견 — 원인은
+  `InterviewPage.tsx`가 숨긴(`hidden`) `<canvas>`를 재사용하던 것,
+  인메모리 캔버스로 교체(실카메라 재검증은 사용자 확인 대기 중).
+  리포트 상세가 원본 JSON을 그대로 노출하던 것도 발견해
+  `ReportDetails.tsx`로 재설계. 이 과정에서 마스터 TRD F-006이 "음성
+  운율" 항목을 누락하고 있었고 프론트엔드 TRD엔 리포트 화면 레이아웃
+  스펙 자체가 없었던 문서 공백을 발견 → `aimock_master_trd.md`/
+  `aimock_frontend_trd.md`(§1-1, AC-F11 신설) 동기화. 상세:
+  `내부테스트결과서/리포트화면TRD정합성점검및문서동기화_20260908124216.md`.
+- **전체 화면 TRD 실측 재검증(AC-F1~F11 전부 PASS) + 실제 버그 발견·수정
+  (2026-09-08)**: 사용자 문의("질문이 14개 고정인가", "질문이 백엔드만
+  나오는가")에 코드+DB 실측으로 답변(둘 다 버그 아님 — LLM이 job_role
+  텍스트를 따라 스스로 판단하는 설계상 정상 동작, job_role을 바꾸면
+  질문 주제도 실제로 바뀜을 직접 실측). 이 과정에서 "원본 답변 오디오
+  관리" 화면의 시각 표시가 이상한 것을 포착 → `users`/`media_assets`
+  등 5개 테이블의 `created_at` DEFAULT가 `now()` 함수가 아니라 **최초
+  마이그레이션 적용 시각으로 고정된 리터럴**이었던 실제 버그를 발견·
+  수정(모델 5개 파일 + 신규 마이그레이션 `f6341f660dd1`). pytest
+  52/52 회귀 없음. 상세:
+  `내부테스트결과서/전체TRD화면실측및질문개수직무필터점검_20260908132406.md`.
+- **Render 배포 지원 + 운영 환경에서 실사용자가 보고한 실제 결함 2건
+  수정(2026-09-08, 같은 날 계속)**: 사용자가 Render(웹서비스)+Neon(관리형
+  Postgres)으로 처음 배포를 진행하는 전 과정(Dockerfile Path/Build
+  Context, `$PORT` 바인딩, Neon 연결 문자열 변환, pgvector 확장,
+  Persistent Disk, Health Check Path, Pre-Deploy Command로 Alembic 자동
+  마이그레이션 등)을 스크린샷 기반으로 단계별 안내해 실제 배포 완료.
+  배포 후 사용자가 실사용 중 보고한 문제 2건을 실제로 조사·수정:
+  1. **턴 제출 응답 10초 이상**: 원인은 `faster-whisper`(로컬 STT)가
+     Render 저사양 인스턴스(0.5 vCPU)에서 CPU 바운드로 느린 것 —
+     로컬 개발 PC에서는 안 보이던 문제. 사용자 승인(ADR-008 신규,
+     하네스 원칙 8 대응)을 받아 STT를 **Groq 호스팅 Whisper API**로
+     전환. 로컬에서 실제 GROQ_API_KEY로 검증: webm/opus 샘플 기준
+     응답 0.48초, 전체 턴 처리(암호화저장+STT+RAG+LLM) 1.84초로
+     대폭 개선(Render 운영 환경 재실측은 사용자가 배포 후 확인 필요).
+  2. **면접이 턴 25까지 진행돼도 안 끝남**: 원인은 LLM 프롬프트에
+     목표 질문 수 지시가 없고 서버에도 상한이 없던 설계 공백. 사용자
+     확정값(최소 5개/최대 10개, 오프닝 포함)으로
+     `interview_min_questions`/`interview_max_questions` 설정 도입 —
+     프롬프트 안내(1차) + 서버 강제(`_enforce_question_count_bounds`,
+     2차 안전장치) 이중 구조로 구현.
+  두 수정 모두 pytest 신규 7건 포함 전체 59 passed(회귀 없음),
+  ruff/mypy 클린, 실제 Docker 컨테이너 + 실제 Groq API 호출로 종단 간
+  스모크 테스트 완료. `docs/adr/adr-008-stt-groq-hosted-whisper.md` 신규,
+  `aimock_u2a_trd.md`(AC-9/AC-10 신규)/`aimock_u3a_trd.md`(AC-5 신규)/
+  `aimock_master_trd.md`(N-001 갱신) 동기화. 상세:
+  `내부테스트결과서/U2a보완_STT전환및질문개수제한_20260908172949.md`.
+  **다음 액션(사람 필요)**: 이 변경분 git 커밋·푸시 → Render 재배포 →
+  운영 환경에서 두 문제가 실제로 해소됐는지 최종 재확인.

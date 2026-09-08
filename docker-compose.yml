@@ -28,7 +28,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src/backend:/app
+      # ADR-007 1단계 보안 강화(2026-09-08): 읽기전용으로 변경 — 원래
+      # 전체쓰기(777)로 노출되던 게 코드 샌드박스 우회 경로가 될 수
+      # 있었음(내부테스트결과서 참조). --reload를 안 써서 실질적 핫리로드
+      # 용도로도 안 쓰이고 있어 기능 손실 없음. uploads는 앱이 실제로
+      # 써야 해서 별도로 계속 쓰기 가능하게 유지.
+      - ./src/backend:/app:ro
       - ./uploads:/app/uploads
     depends_on:
       postgres:

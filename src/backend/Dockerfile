@@ -16,4 +16,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render는 $PORT 환경변수로 실제 리스닝 포트를 지정한다(고정 8000이면
+# 헬스체크가 실패함). 로컬 docker-compose는 PORT를 안 넘기므로 8000 유지.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

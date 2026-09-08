@@ -22,8 +22,8 @@
 sequenceDiagram
     participant C as 지원자(브라우저)
     participant API as Core API
-    participant STT as STTProvider(faster-whisper)
-    participant LLM as LLMProvider(Gemini/Fake)
+    participant STT as STTProvider(Groq Whisper API, ADR-008)
+    participant LLM as LLMProvider(Groq/Fake)
     participant DB as PostgreSQL
 
     C->>API: POST /api/v1/interviews {job_role}
@@ -93,6 +93,28 @@ sequenceDiagram
 - LLM이 `action="end_interview"`를 반환하면 즉시 interview를 completed로
   전환. 지원자가 `/end`를 직접 호출해도 동일하게 처리.
 - `status != "live"`인 interview에 턴을 제출하면 409.
+- **질문 개수 최소/최대 강제(2026-09-08 추가, ADR-008 연계)**: 운영 환경
+  (Render) 실사용 중 "면접이 턴 25까지 진행돼도 안 끝난다"는 문제를
+  사용자가 실제로 보고해 발견 — 원인은 LLM에게 "몇 개 질문 후 끝내라"는
+  지시가 전혀 없었고, 서버에도 상한이 없었던 것(설계 공백, 버그).
+  대응: 사용자 확정값 기준 **최소 5개 / 최대 10개**(오프닝 질문 포함)를
+  `interview_min_questions`/`interview_max_questions` 설정값으로 도입.
+  1차로 LLM 프롬프트(`SYSTEM_PROMPT` + 매 턴 사용자 메시지의 "[면접 진행
+  상황]")에 현재 질문 번호와 목표 범위를 안내해 LLM이 스스로 따르게
+  하고, LLM이 지시를 어겨도 서버가 최종적으로 강제한다
+  (`interview_service._enforce_question_count_bounds`):
+```mermaid
+flowchart TD
+    A["LLM 응답 수신<br/>(action, reply_text)"] --> B{"action ==<br/>end_interview?"}
+    B -- "예" --> C{"asked_count <br/>< min_questions?"}
+    C -- "예(너무 일찍 끝내려 함)" --> D["서버가 강제로<br/>ask_question으로 교체<br/>(질문 후보 1건 또는<br/>고정 폴백 문구 사용)"]
+    C -- "아니오(정상)" --> E["LLM 결정 그대로<br/>면접 종료(completed)"]
+    B -- "아니오(ask_question)" --> F{"asked_count >=<br/>max_questions?"}
+    F -- "예(너무 오래 끎)" --> G["서버가 강제로<br/>end_interview로 교체<br/>(고정 마무리 문구 사용)"]
+    F -- "아니오(정상)" --> H["LLM 결정 그대로<br/>다음 질문 진행"]
+```
+  `asked_count`는 이번 응답 이전까지 이미 나온 질문 수(오프닝 포함,
+  `speaker=ai`인 transcript 개수)로 계산한다.
 
 ## §4. 상태/에러 코드
 
@@ -112,13 +134,22 @@ sequenceDiagram
 - [ ] AC-3: 800자를 초과하는 전사 텍스트로 턴을 제출하면 LLM을 호출하지
   않고 고정 안내문구가 반환된다(Fake LLM 호출 카운트로 검증).
 - [ ] AC-4: LLM이 `action="end_interview"`를 반환하면 interview의 status가
-  `completed`로 바뀌고 `ended_at`이 채워진다.
+  `completed`로 바뀌고 `ended_at`이 채워진다(단, **AC-9의 최소 질문 개수
+  조건을 만족한 경우에 한함** — 2026-09-08 추가, 아래 참조).
 - [ ] AC-5: `/end`를 호출하면 즉시 `completed`로 바뀐다.
 - [ ] AC-6: 다른 사용자의 interview에 턴을 제출하면 403을 반환한다.
 - [ ] AC-7: `completed` 상태의 interview에 턴을 제출하면 409를 반환한다.
 - [ ] AC-8: `GEMINI_API_KEY`가 없는 상태에서 (800자 이하) 턴을 제출하면
   500이 아니라 503(`SERVICE_UNAVAILABLE`)을 반환한다(실제 Docker
   컨테이너 테스트로 발견 → 수정, 2026-09-07).
+- [ ] AC-9(2026-09-08 추가): 이미 나온 질문 수(오프닝 포함)가
+  `interview_min_questions`(기본 5) 미만인 상태에서 LLM이
+  `action="end_interview"`를 반환해도, 서버가 이를 `ask_question`으로
+  교체해 면접을 계속 진행시킨다(interview는 `live`로 유지).
+- [ ] AC-10(2026-09-08 추가): 이미 나온 질문 수가
+  `interview_max_questions`(기본 10) 이상인 상태에서 LLM이
+  `action="ask_question"`을 반환해도, 서버가 이를 `end_interview`로
+  교체해 면접을 강제 종료한다(고정 마무리 문구 사용).
 
 ## §6. 테스트 시나리오
 
@@ -131,9 +162,13 @@ sequenceDiagram
 | 수동 종료 | `/end` 호출 | status completed | AC-5 |
 | 타인 소유 | 다른 사용자의 interview_id | 403 | AC-6 |
 | 종료 후 턴 | completed 상태에 턴 제출 | 409 | AC-7 |
+| 최소 개수 미달 종료 시도 | Fake LLM이 첫 턴부터 action=end_interview 반환(asked_count=1 < min=5) | ended=false, status live 유지, 반환 질문은 LLM 문구가 아닌 서버 대체 질문 | AC-9 |
+| 최대 개수 도달 | `interview_max_questions=1`로 축소 + Fake LLM이 action=ask_question 반환(asked_count=1 >= max=1) | ended=true, status completed, 반환 문구는 LLM 문구가 아닌 고정 마무리 문구 | AC-10 |
+| 경계값 단위 테스트 | `_enforce_question_count_bounds()` 직접 호출(asked_count == min, == max-1, == max) | min과 정확히 같으면 종료 허용, max-1이면 질문 허용, max 이상이면 강제 종료 | AC-9/AC-10 |
 
 ## §7. 미결 항목
 | 항목 | 권장 기본값 | 확정 필요 여부 |
 |---|---|---|
 | 답변 길이 제한값(800자) | 800자 | 아니오(기본값 적용, 실사용 데이터로 추후 조정) |
-| 오디오 자체를 이 흐름에서도 영구 저장할지 | 저장 안 함(STT 후 즉시 폐기), 필요 시 클라이언트가 U1-b 별도 호출 | 아니오(ADR-004 원칙과 일치) |
+| 오디오 자체를 이 흐름에서도 영구 저장할지 | **[2026-09-08 정정 — 원본 우선 원칙] 실제로는 저장함.** ADR-004 재검토(마스터 TRD §3 N-003 라인 리뷰, 2026-09-08)에서 `submit_turn`이 STT에만 오디오를 쓰고 U1-b 저장을 호출 안 하던 누락을 발견해 `media_service.upload_media` 호출을 연결함(§3 워크플로우 코드 참조). 이 줄의 "저장 안 함"은 최초 작성 당시(2026-09-07) 설계였고 현재 코드와 다름 | 아니오(이미 실행 완료, 문서만 실제 상태로 정정) |
+| 면접 질문 개수 최소/최대값(ADR-008 연계) | **확정됨(2026-09-08, 사용자 지시): 최소 5개 / 최대 10개**(오프닝 포함). `interview_min_questions`/`interview_max_questions` 설정값 | 아니오(확정 완료, 필요 시 설정값만 조정) |

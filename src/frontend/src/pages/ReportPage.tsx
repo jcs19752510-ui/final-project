@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { mediaApi, reportApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
+import { ReportDetails } from "../components/ReportDetails";
 import type { MediaAssetResponse, ReportResponse } from "../api/types";
 
 type ViewState =
@@ -100,9 +101,7 @@ export function ReportPage() {
           </div>
           <h3>요약</h3>
           <p>{state.report.summary_text ?? "요약 정보가 없습니다."}</p>
-          <h3>상세</h3>
-          <pre className="output-block">{JSON.stringify(state.report.details_json, null, 2)}</pre>
-          <p className="hint">표정/음성 비언어 지표(U3-b)는 아직 준비 중입니다.</p>
+          <ReportDetails details={state.report.details_json} />
         </div>
       )}
       {id && <MediaManager interviewId={id} />}

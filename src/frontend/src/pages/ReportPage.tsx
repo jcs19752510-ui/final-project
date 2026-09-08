@@ -1,34 +1,72 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { mediaApi, reportApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { ReportDetails } from "../components/ReportDetails";
 import type { MediaAssetResponse, ReportResponse } from "../api/types";
 
+// 2026-09-08(u4 TRD §0-2): 리포트 생성이 백그라운드로 바뀌면서 POST는 항상
+// 즉시 processing만 반환한다 — 실제 완료/실패는 이 간격으로 GET을 폴링해
+// 확인한다(운영 환경에서 리포트 생성이 1분 이상 걸려 화면이 그 시간 내내
+// 멈춰 있던 문제를 이 방식으로 해결).
+const POLL_INTERVAL_MS = 2000;
+
 type ViewState =
   | { kind: "loading" }
   | { kind: "not-found" }
+  | { kind: "processing" }
+  | { kind: "failed"; message: string }
   | { kind: "conflict"; message: string }
-  | { kind: "unavailable"; message: string }
   | { kind: "error"; message: string }
   | { kind: "ready"; report: ReportResponse };
 
 export function ReportPage() {
   const { id } = useParams<{ id: string }>();
   const [state, setState] = useState<ViewState>({ kind: "loading" });
-  const [generating, setGenerating] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopPolling() {
+    if (pollTimerRef.current !== null) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  function startPolling() {
+    if (pollTimerRef.current !== null || !id) return;
+    pollTimerRef.current = setInterval(() => {
+      reportApi
+        .get(id)
+        .then(applyReport)
+        // 폴링 중 일시적 오류(네트워크 등)는 조용히 다음 tick에 재시도 —
+        // 화면을 에러로 덮어써서 정상 진행 중인 폴링을 끊지 않는다.
+        .catch(() => {});
+    }, POLL_INTERVAL_MS);
+  }
+
+  function applyReport(report: ReportResponse) {
+    if (report.status === "processing") {
+      setState({ kind: "processing" });
+      startPolling();
+      return;
+    }
+    stopPolling();
+    if (report.status === "failed") {
+      setState({ kind: "failed", message: report.error_message ?? "리포트 생성에 실패했습니다." });
+      return;
+    }
+    setState({ kind: "ready", report });
+  }
 
   async function load() {
     if (!id) return;
     setState({ kind: "loading" });
     try {
       const report = await reportApi.get(id);
-      setState({ kind: "ready", report });
+      applyReport(report);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setState({ kind: "not-found" });
-      } else if (err instanceof ApiError && err.status === 503) {
-        setState({ kind: "unavailable", message: err.message });
       } else if (err instanceof ApiError) {
         setState({ kind: "error", message: err.message });
       } else {
@@ -39,29 +77,28 @@ export function ReportPage() {
 
   useEffect(() => {
     void load();
+    return () => stopPolling();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function handleGenerate() {
     if (!id) return;
-    setGenerating(true);
     try {
       const report = await reportApi.generate(id);
-      setState({ kind: "ready", report });
+      applyReport(report);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // 409는 "리포트가 이미 생성 중"이 아니라 서버가 그때그때 알려주는
         // 충돌 사유(예: "완료된 면접만 리포트를 생성할 수 있습니다")를 의미
         // (원본 코드 우선 원칙 — src/backend/app/services/report_service.py
-        // generate_report()의 ConflictError 실제 발생 조건을 재확인 후 수정).
+        // start_report_generation()의 ConflictError 실제 발생 조건을 재확인
+        // 후 수정).
         setState({ kind: "conflict", message: err.message });
-      } else if (err instanceof ApiError && err.status === 503) {
-        setState({ kind: "unavailable", message: err.message });
       } else if (err instanceof ApiError) {
         setState({ kind: "error", message: err.message });
+      } else {
+        setState({ kind: "error", message: "리포트 생성 요청에 실패했습니다." });
       }
-    } finally {
-      setGenerating(false);
     }
   }
 
@@ -72,17 +109,23 @@ export function ReportPage() {
       {state.kind === "not-found" && (
         <div className="card">
           <p>아직 생성된 리포트가 없습니다.</p>
-          <button onClick={handleGenerate} disabled={generating}>
-            {generating ? "생성 중..." : "리포트 생성하기"}
-          </button>
+          <button onClick={handleGenerate}>리포트 생성하기</button>
+        </div>
+      )}
+      {state.kind === "processing" && (
+        <div className="card">
+          <p>리포트를 생성하고 있습니다... (완료되면 자동으로 표시됩니다)</p>
+        </div>
+      )}
+      {state.kind === "failed" && (
+        <div className="card">
+          <p className="form-error" role="alert">
+            {state.message}
+          </p>
+          <button onClick={handleGenerate}>다시 시도</button>
         </div>
       )}
       {state.kind === "conflict" && (
-        <p className="form-error" role="alert">
-          {state.message}
-        </p>
-      )}
-      {state.kind === "unavailable" && (
         <p className="form-error" role="alert">
           {state.message}
         </p>

@@ -52,28 +52,60 @@ describe("ReportPage — 409 처리 회귀 테스트", () => {
     expect(screen.queryByText(/이미 생성하는 중/)).not.toBeInTheDocument();
   });
 
-  it("503(SERVICE_UNAVAILABLE)은 unavailable 메시지를 그대로 보여준다", async () => {
-    vi.mocked(reportApi.get).mockRejectedValue(
-      new ApiError(503, "SERVICE_UNAVAILABLE", "리포트 생성 AI가 아직 준비되지 않았습니다(GEMINI_API_KEY 미설정).")
-    );
+  // 2026-09-08(u4 TRD §0-2): 리포트 생성이 백그라운드로 바뀌면서 POST/GET이
+  // 더 이상 503을 직접 반환하지 않는다(AI 미가용 등은 status="failed"로
+  // 표현됨) — 아래 테스트로 대체.
+  it("status=processing이면 생성 중 안내를 보여준다", async () => {
+    vi.mocked(reportApi.get).mockResolvedValue({
+      interview_id: "interview-2",
+      status: "processing",
+      technical_score: null,
+      communication_score: null,
+      cultural_fit_score: null,
+      summary_text: null,
+      details_json: {},
+      error_message: null,
+    });
 
     renderAt("interview-2");
 
     await waitFor(() => {
+      expect(screen.getByText(/생성하고 있습니다/)).toBeInTheDocument();
+    });
+  });
+
+  it("status=failed면 서버가 준 안전한 에러 메시지와 재시도 버튼을 보여준다", async () => {
+    vi.mocked(reportApi.get).mockResolvedValue({
+      interview_id: "interview-2b",
+      status: "failed",
+      technical_score: null,
+      communication_score: null,
+      cultural_fit_score: null,
+      summary_text: null,
+      details_json: {},
+      error_message: "리포트 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+    });
+
+    renderAt("interview-2b");
+
+    await waitFor(() => {
       expect(
-        screen.getByText("리포트 생성 AI가 아직 준비되지 않았습니다(GEMINI_API_KEY 미설정).")
+        screen.getByText("리포트 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
       ).toBeInTheDocument();
     });
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
   it("정상 리포트는 점수와 요약을 렌더링한다", async () => {
     vi.mocked(reportApi.get).mockResolvedValue({
       interview_id: "interview-3",
+      status: "completed",
       technical_score: 4,
       communication_score: 3,
       cultural_fit_score: 5,
       summary_text: "테스트 요약입니다.",
       details_json: { keywords: ["테스트"] },
+      error_message: null,
     });
 
     renderAt("interview-3");

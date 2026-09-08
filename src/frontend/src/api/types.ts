@@ -35,13 +35,20 @@ export interface CodeSubmissionResponse {
   timed_out: boolean;
 }
 
+// 2026-09-08(u4 TRD §0-2): 리포트 생성이 비동기(백그라운드)로 바뀌면서
+// status가 추가됨 — POST 직후엔 항상 "processing", 완료/실패는 GET
+// 폴링으로 확인.
+export type ReportStatus = "processing" | "completed" | "failed";
+
 export interface ReportResponse {
   interview_id: string;
+  status: ReportStatus;
   technical_score: number | null;
   communication_score: number | null;
   cultural_fit_score: number | null;
   summary_text: string | null;
   details_json: Record<string, unknown>;
+  error_message: string | null;
 }
 
 export interface InterviewSummary {

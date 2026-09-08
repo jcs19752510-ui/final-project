@@ -29,7 +29,19 @@ export function RecruiterReportPage() {
           {error}
         </p>
       )}
-      {report && (
+      {report && report.status === "processing" && (
+        <div className="card">
+          <p>지원자가 리포트를 생성하는 중입니다. 잠시 후 새로고침해 주세요.</p>
+        </div>
+      )}
+      {report && report.status === "failed" && (
+        <div className="card">
+          <p className="form-error" role="alert">
+            {report.error_message ?? "리포트 생성에 실패했습니다."}
+          </p>
+        </div>
+      )}
+      {report && report.status === "completed" && (
         <div className="card">
           <div className="score-row">
             <ScoreBadge label="기술" value={report.technical_score} />

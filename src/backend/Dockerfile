@@ -8,7 +8,11 @@ WORKDIR /app
 # libseccomp2: ADR-007 재검토(2026-09-08) — 코드 실행 샌드박스의 syscall
 # 필터링(app/sandbox/executor.py)에 필요. ffmpeg 등이 우연히 딸려 설치해줄
 # 수도 있지만 그 우연에 기대지 않고 명시적으로 설치한다.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libseccomp2 \
+# nodejs: ADR-007 재검토(2026-09-09) — 라이브 코딩 JavaScript 지원 추가로
+# `app/sandbox/executor.py`가 `node`를 서브프로세스로 실행한다. Debian
+# 기본 저장소 버전(구버전일 수 있음)이지만, 이 샌드박스는 npm 패키지
+# 설치 없이 순수 JS 실행만 지원하므로 버전 최신성이 중요하지 않다.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libseccomp2 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

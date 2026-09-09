@@ -127,6 +127,51 @@
   실제 공개 배포를 결정하는 시점에는 반드시 B안/C안 재논의를 먼저 거친
   뒤 배포해야 한다(A안 그대로 공개 배포하지 않는다).
 
+## 2단계 — JavaScript 지원 추가 (2026-09-09)
+
+**배경**: `99.모의면접_전수검사/전수검사결과_20260909101218.md` REQ-F-004
+발견 — 원안(PDF)은 Python+JavaScript 2개 언어를 요구했는데 Python만
+지원하고 있었음. 사용자에게 확인한 결과, **Node용 seccomp 바인딩이
+Python(`pyseccomp`)만큼 간단하지 않아 완전히 동일한 보안 수준을 갖추기
+어렵다는 점을 안내하고, "리소스 제한(CPU/메모리/시간)+비root까지만
+JS에도 적용하고, 네트워크 차단(seccomp)은 Python만 유지"로 명시적
+승인**을 받음.
+
+```mermaid
+flowchart TD
+    A["제출된 코드"] --> B{"언어"}
+    B -- "Python" --> C["RLIMIT_CPU/AS + 비root +<br/>**seccomp(socket/execve 차단)**"]
+    B -- "JavaScript" --> D["RLIMIT_CPU + 비root +<br/>Node --max-old-space-size<br/>(seccomp 없음)"]
+    C --> E["실행 결과 반환"]
+    D --> E
+    D -.->|"⚠️ 알려진 차이"| F["JS 코드는 이론상<br/>외부 네트워크 접근 가능"]
+```
+
+**JS 경로의 구체적 차이**:
+1. **네트워크 차단 없음**: Python은 `socket`/`connect`/`bind`/`listen`/
+   `accept` syscall이 seccomp로 막히지만, JS는 안 막힌다 — 이론상 제출된
+   JS 코드가 외부로 HTTP 요청을 보내거나 내부망을 스캔할 수 있다. 회귀
+   테스트로 이 사실 자체를 고정해뒀다
+   (`tests/backend/test_sandbox_hardening.py::test_js_network_access_is_not_blocked_known_gap`
+   — 이 테스트가 실패하면 오히려 이 문서를 갱신해야 한다는 뜻).
+2. **외부 프로그램 실행 차단 없음**: 같은 이유로 `execve` 계열도 JS에는
+   안 걸림(Node의 `child_process` 모듈로 셸 명령 실행이 가능할 수 있음).
+3. **메모리 제한 방식이 다름**: `RLIMIT_AS`(OS 레벨 가상메모리 제한)를
+   Node/V8 프로세스에 걸면, V8이 시작 시점에 실제 사용량과 무관하게 넓은
+   가상 메모리 영역을 미리 예약하는 특성 때문에 정상 코드도 프로세스
+   시작 단계에서 실패하는 경우가 흔하다(잘 알려진 Node/RLIMIT_AS
+   비호환 문제) — 그래서 JS는 `node --max-old-space-size=256` 플래그로
+   V8 힙 자체를 제한한다(`app/sandbox/executor.py` 참조). CPU 시간 제한
+   (`RLIMIT_CPU`)과 비root 권한 하락은 언어와 무관하게 동일하게 적용.
+
+**왜 이 비대칭을 받아들였는가(사람 승인 근거)**: Node용 seccomp 적용을
+제대로 하려면 네이티브 애드온 조사·빌드·검증이 추가로 필요해 1인/4주
+범위를 벗어나고, 이 프로젝트가 여전히 "본인/포트폴리오 또는 제한적
+공개" 단계라는 위협 모델(위 §"사용자 확인(2026-09-08)" 참조)에서는
+수용 가능한 리스크로 판단함. **공개 배포 전 필수 재검토 항목에 "JS
+네트워크 차단"도 추가**한다 — Python은 이미 되어 있으므로 대상은 JS
+경로만.
+
 ## 관련 문서
 
 - 관련 TRD: `docs/trd/aimock_u2b_trd.md`

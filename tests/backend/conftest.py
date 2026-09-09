@@ -14,6 +14,29 @@ os.environ.setdefault(
     # 안 되는 문제로 발견). 반드시 별도 DB("aimock_test")를 써야 한다.
     "DATABASE_URL", "postgresql+asyncpg://aimock:aimock_dev_only@localhost:55432/aimock_test"
 )
+# ⚠️ 2026-09-09 재발 — 같은 부류의 사고가 다른 경로로 다시 일어남:
+# `docker compose exec app pytest ...`로 컨테이너 안에서 이 테스트를
+# 돌리면, 컨테이너의 실행 환경에 이미 `DATABASE_URL`이 **실제 개발 DB
+# ("aimock")로 설정되어 있어서**(docker-compose.yml의 `app` 서비스
+# environment) 위 `setdefault`가 아무 효과가 없었다 — "이미 설정돼 있으면
+# 그대로 둔다"는 setdefault의 정의상 당연한 동작인데, 이번엔 그 "이미
+# 설정된 값"이 하필 진짜 개발 DB였다. 그 결과 `_clean_db`가 로컬 dev DB
+# 전체를 TRUNCATE해버림(실제로 발생 — 내부테스트결과서 참조). 재발 방지로
+# **최종적으로 확정된 DATABASE_URL이 테스트 전용 DB가 아니면 이 시점에서
+# 바로 죽인다** — 아무리 실행 방식이 달라져도(로컬 host, Docker exec,
+# CI 등) 이 방어선 하나만은 항상 통과해야 실제 파괴적 TRUNCATE로 진행됨.
+_resolved_db_url = os.environ["DATABASE_URL"]
+if "_test" not in _resolved_db_url.rsplit("/", 1)[-1]:
+    raise RuntimeError(
+        "테스트가 테스트 전용 DB가 아닌 곳을 가리키고 있습니다: "
+        f"{_resolved_db_url!r} — 이 DB 이름에 '_test'가 없습니다. "
+        "이 테스트 스위트는 모든 테이블을 TRUNCATE하므로, 실수로 개발/운영 "
+        "DB를 대상으로 실행되는 것을 막기 위해 여기서 중단합니다. "
+        "DATABASE_URL 환경변수가 어디서 설정됐는지(.env, docker-compose "
+        "environment, 셸 export 등) 확인하고 *_test로 끝나는 DB로 "
+        "바꾸세요."
+    )
+
 os.environ.setdefault("JWT_SECRET", "test-only-secret")
 # 2026-09-09(F-4, AES-256-GCM 전환): 이전 값은 Fernet(AES-128)용으로 만든
 # 키였음 — 우연히 32바이트라 새 방식에서도 길이 검증은 통과했겠지만,
@@ -36,6 +59,7 @@ from app.ai.providers import (
     get_prosody_analyzer,
     get_report_generator,
     get_stt_provider,
+    get_whiteboard_evaluator,
 )
 from app.db import AsyncSessionLocal, Base, engine
 from app.main import app
@@ -46,6 +70,7 @@ from fakes import (
     FakeProsodyAnalyzer,
     FakeReportGenerator,
     FakeSTTProvider,
+    FakeWhiteboardEvaluator,
 )
 
 
@@ -89,6 +114,15 @@ def _fake_emotion_prosody_analyzers():
     yield fake_emotion, fake_prosody
     app.dependency_overrides.pop(get_emotion_analyzer, None)
     app.dependency_overrides.pop(get_prosody_analyzer, None)
+
+
+@pytest.fixture(autouse=True)
+def _fake_whiteboard_evaluator():
+    """aimock_u2c_trd.md — 실제 Gemini Vision 대신 Fake로 검증."""
+    fake_whiteboard = FakeWhiteboardEvaluator()
+    app.dependency_overrides[get_whiteboard_evaluator] = lambda: fake_whiteboard
+    yield fake_whiteboard
+    app.dependency_overrides.pop(get_whiteboard_evaluator, None)
 
 
 @pytest_asyncio.fixture

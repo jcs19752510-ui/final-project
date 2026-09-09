@@ -9,6 +9,7 @@ import type {
   TokenResponse,
   TurnResponse,
   UserResponse,
+  WhiteboardSnapshotResponse,
 } from "./types";
 
 export const authApi = {
@@ -48,10 +49,10 @@ export const interviewApi = {
 };
 
 export const codingApi = {
-  submit: (interviewId: string, code: string) =>
+  submit: (interviewId: string, language: "python" | "javascript", code: string) =>
     apiRequest<CodeSubmissionResponse>(`/api/v1/interviews/${interviewId}/coding-submissions`, {
       method: "POST",
-      body: { language: "python", code },
+      body: { language, code },
     }),
 };
 
@@ -76,6 +77,19 @@ export const mediaApi = {
       formData: form,
     });
   },
+};
+
+export const whiteboardApi = {
+  submit: (interviewId: string, image: Blob) => {
+    const form = new FormData();
+    form.append("file", image, "whiteboard.png");
+    return apiRequest<WhiteboardSnapshotResponse>(
+      `/api/v1/interviews/${interviewId}/whiteboard-snapshots`,
+      { method: "POST", formData: form }
+    );
+  },
+  list: (interviewId: string) =>
+    apiRequest<WhiteboardSnapshotResponse[]>(`/api/v1/interviews/${interviewId}/whiteboard-snapshots`),
 };
 
 export const recruiterApi = {

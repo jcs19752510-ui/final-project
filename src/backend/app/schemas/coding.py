@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class CodeSubmissionRequest(BaseModel):
-    language: Literal["python"]
+    language: Literal["python", "javascript"]
     code: str
 
 

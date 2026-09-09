@@ -66,6 +66,13 @@ export interface MediaAssetResponse {
   created_at: string;
 }
 
+// 2026-09-09(F-005, 화이트보드): app/schemas/whiteboard.py와 1:1 대응.
+export interface WhiteboardSnapshotResponse {
+  id: string;
+  ai_feedback_text: string | null;
+  created_at: string;
+}
+
 export interface StatsResponse {
   total_interviews: number;
   completed_interviews: number;

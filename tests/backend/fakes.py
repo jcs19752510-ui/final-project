@@ -5,6 +5,7 @@ from app.ai.llm import ConversationContext, LLMProvider, LLMTurnResult
 from app.ai.prosody import ProsodyAnalyzer, ProsodyResult
 from app.ai.report import ReportContext, ReportGenerator, ReportResult
 from app.ai.stt import STTProvider
+from app.ai.whiteboard import WhiteboardEvaluator
 
 
 class FakeSTTProvider(STTProvider):
@@ -74,3 +75,15 @@ class FakeProsodyAnalyzer(ProsodyAnalyzer):
     async def analyze(self, audio_bytes: bytes) -> ProsodyResult:
         self.call_count += 1
         return self.fixed_result
+
+
+class FakeWhiteboardEvaluator(WhiteboardEvaluator):
+    """docs/trd/aimock_u2c_trd.md — 실제 Gemini Vision 호출 없이 고정 피드백 반환."""
+
+    def __init__(self, fixed_feedback: str = "구성요소 배치가 명확합니다. 장애 대응 설계를 보강하세요."):
+        self.fixed_feedback = fixed_feedback
+        self.call_count = 0
+
+    async def evaluate(self, image_bytes: bytes, mime_type: str, job_role: str) -> str:
+        self.call_count += 1
+        return self.fixed_feedback

@@ -316,3 +316,23 @@ button.danger:hover {
   text-align: center;
   color: var(--color-muted);
 }
+
+.whiteboard-canvas-wrap {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: auto;
+  background: #ffffff;
+  max-width: 100%;
+}
+
+.whiteboard-canvas {
+  display: block;
+  touch-action: none; /* 터치 드래그로 스크롤이 아니라 그리기가 되도록 */
+  cursor: crosshair;
+}
+
+.whiteboard-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

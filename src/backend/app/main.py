@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, coding, interview, media, recruiter, report
+from app.api.routes import auth, coding, interview, media, recruiter, report, whiteboard
 from app.config import settings
 from app.core.errors import AppError
 from app.services.scheduler import create_scheduler
@@ -110,6 +110,7 @@ app.include_router(auth.router)
 app.include_router(media.router)
 app.include_router(interview.router)
 app.include_router(coding.router)
+app.include_router(whiteboard.router)
 app.include_router(report.router)
 app.include_router(recruiter.router)
 

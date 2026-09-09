@@ -47,12 +47,20 @@ class FakeReportGenerator(ReportGenerator):
 class FakeEmotionAnalyzer(EmotionAnalyzer):
     """docs/trd/aimock_u3b_trd.md — 실제 DeepFace 모델 다운로드 없이 고정값 반환."""
 
-    def __init__(self, fixed_result: EmotionResult | None = None):
+    def __init__(self, fixed_result: EmotionResult | None = None, delay_seconds: float = 0.0):
         self.fixed_result = fixed_result or EmotionResult("neutral", 0.9)
         self.call_count = 0
+        # 2026-09-08(운영 환경 무한 대기 버그 대응) — 분석이 오래 걸리는
+        # 상황(Render에서 실제 재현됨)을 흉내내 타임아웃 안전장치를 검증하기
+        # 위한 지연 옵션.
+        self.delay_seconds = delay_seconds
 
     async def analyze_frame(self, image_bytes: bytes) -> EmotionResult:
+        import asyncio
+
         self.call_count += 1
+        if self.delay_seconds:
+            await asyncio.sleep(self.delay_seconds)
         return self.fixed_result
 
 

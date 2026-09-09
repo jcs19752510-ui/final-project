@@ -213,6 +213,37 @@ async def test_ac8_keyword_extraction_finds_repeated_word(client, db_session):
     assert "MSA" in body["details_json"]["keywords"]
 
 
+async def test_u4_ac13_media_analysis_timeout_still_completes_report(
+    client, db_session, _fake_emotion_prosody_analyzers, monkeypatch
+):
+    """2026-09-08 긴급 추가 — 운영 환경(Render)에서 미디어(오디오/영상프레임)가
+    있는 리포트가 표정/음성 분석 단계에서 몇 분이 지나도 절대 끝나지 않는
+    것을 실제 프로덕션 API 호출로 직접 재현·확인함(내부테스트결과서 참조).
+    정확한 원인 규명과 별개로, 분석이 아무리 오래 걸려도(또는 멈춰도)
+    리포트 생성 자체는 반드시 끝나야 한다 — 타임아웃 시 안전한 폴백으로
+    넘어가는지 검증."""
+    from app.services import report_service
+
+    fake_emotion, _fake_prosody = _fake_emotion_prosody_analyzers
+    fake_emotion.delay_seconds = 2.0  # "멈춘 것처럼 오래 걸림"을 흉내
+    monkeypatch.setattr(report_service, "MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS", 0.5)
+
+    token = await _signup_and_login(client)
+    interview = await _make_interview(db_session)
+    await client.post(
+        f"/api/v1/interviews/{interview.id}/media",
+        headers=_auth(token),
+        data={"kind": "video_frame", "turn_index": "0"},
+        files={"file": ("frame.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+    )
+
+    body = await _generate_and_fetch(client, token, interview.id)
+    assert body["status"] == "completed"  # 타임아웃 나도 전체 리포트는 끝나야 함
+    assert body["details_json"]["emotion_timeline"] == [
+        {"turn_index": 0, "dominant_emotion": "unknown", "confidence": 0.0}
+    ]
+
+
 async def test_u4_ac9_post_response_is_immediately_processing_not_final_data(client, db_session):
     """2026-09-08(§3-1) 신규 — 운영 환경에서 리포트 생성이 1분 이상 걸리던
     문제 수정의 핵심 계약: POST 응답 자체는 무거운 분석을 기다리지 않고

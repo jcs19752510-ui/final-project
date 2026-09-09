@@ -7,6 +7,7 @@
 `run_report_generation`(백그라운드에서 독립 세션으로 실행)으로 분리한다.
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.emotion import EmotionAnalyzer
+from app.ai.emotion import UNKNOWN_EMOTION, EmotionAnalyzer, EmotionResult
+from app.ai.prosody import FALLBACK_RESULT as PROSODY_FALLBACK_RESULT
 from app.ai.prosody import ProsodyAnalyzer
 from app.ai.report import ReportContext, ReportGenerator
 from app.core.errors import AppError, ConflictError, ForbiddenError, NotFoundError
@@ -37,6 +39,17 @@ logger = logging.getLogger("aimock.report")
 PROCESSING_STALE_AFTER = timedelta(minutes=5)
 
 GENERIC_FAILURE_MESSAGE = "리포트 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+
+# 2026-09-08 긴급 추가 — 운영 환경(Render)에서 미디어(오디오/영상프레임)가
+# 있는 리포트가 표정/음성 분석 단계에서 4분 이상 지나도 절대 끝나지 않는
+# 것을 실제 프로덕션 API 호출로 직접 재현·확인함(로컬에서는 재현 안 됨).
+# 정확한 원인(디스크 I/O/네트워크 등)은 운영 로그로 추가 조사 필요하지만,
+# "리포트가 영원히 안 끝나는" 최악의 상황 자체는 원인 규명과 무관하게
+# 지금 당장 막아야 해서, 프레임/클립 1건당 분석에 타임아웃을 건다. 타임아웃
+# 나면 해당 항목만 안전한 폴백값으로 처리하고 나머지는 계속 진행 —
+# U3-b AC-3(얼굴 미검출 시 unknown 폴백)와 동일한 "부분 실패해도 전체는
+# 안 죽는다" 원칙의 연장.
+MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS = 20
 
 
 async def _get_owned_interview(db: AsyncSession, interview_id: UUID, user_id: UUID) -> Interview:
@@ -113,6 +126,44 @@ async def _fetch_report_row(db: AsyncSession, interview_id: UUID) -> EvaluationR
     )
 
 
+async def _analyze_frame_with_timeout(
+    analyzer: EmotionAnalyzer, frame: MediaAsset
+) -> EmotionResult:
+    """파일 읽기(디스크 I/O)+분석을 한 덩어리로 타임아웃 적용. 디스크 read도
+    `to_thread`로 감싸야 `wait_for`가 실제로 제때 포기할 수 있다(동기 호출을
+    코루틴 안에서 직접 부르면 취소가 안 먹힘)."""
+
+    async def _do() -> EmotionResult:
+        data = await asyncio.to_thread(media_service.read_media_bytes, frame)
+        return await analyzer.analyze_frame(data)
+
+    try:
+        return await asyncio.wait_for(_do(), timeout=MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "표정 분석 타임아웃(turn_index=%d, %d초 초과) — 안전한 폴백 사용",
+            frame.turn_index,
+            MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS,
+        )
+        return EmotionResult(dominant_emotion=UNKNOWN_EMOTION, confidence=0.0)
+
+
+async def _analyze_clip_with_timeout(analyzer: ProsodyAnalyzer, clip: MediaAsset):
+    async def _do():
+        data = await asyncio.to_thread(media_service.read_media_bytes, clip)
+        return await analyzer.analyze(data)
+
+    try:
+        return await asyncio.wait_for(_do(), timeout=MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "음성 운율 분석 타임아웃(turn_index=%d, %d초 초과) — 안전한 폴백 사용",
+            clip.turn_index,
+            MEDIA_ANALYSIS_ITEM_TIMEOUT_SECONDS,
+        )
+        return PROSODY_FALLBACK_RESULT
+
+
 async def _build_emotion_timeline(
     db: AsyncSession, interview_id: UUID, analyzer: EmotionAnalyzer | None
 ) -> list[dict]:
@@ -134,7 +185,7 @@ async def _build_emotion_timeline(
     started = time.monotonic()
     timeline = []
     for frame in frames:
-        result = await analyzer.analyze_frame(media_service.read_media_bytes(frame))
+        result = await _analyze_frame_with_timeout(analyzer, frame)
         timeline.append(
             {
                 "turn_index": frame.turn_index,
@@ -170,7 +221,7 @@ async def _build_voice_prosody(
     started = time.monotonic()
     prosody = []
     for clip in clips:
-        result = await analyzer.analyze(media_service.read_media_bytes(clip))
+        result = await _analyze_clip_with_timeout(analyzer, clip)
         prosody.append(
             {
                 "turn_index": clip.turn_index,

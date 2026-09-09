@@ -39,7 +39,7 @@ async def submit_turn(
 ) -> TurnResponse:
     raw = await audio.read()
     question_text, ended = await interview_service.submit_turn(
-        db, interview_id, current_user.id, turn_index, raw, stt, llm
+        db, interview_id, current_user.id, turn_index, raw, stt, llm, content_type=audio.content_type
     )
     return TurnResponse(question_text=question_text, ended=ended)
 

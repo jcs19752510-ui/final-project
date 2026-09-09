@@ -115,6 +115,7 @@ async def submit_turn(
     audio_bytes: bytes,
     stt: STTProvider,
     llm: LLMProvider,
+    content_type: str | None = None,
 ) -> tuple[str, bool]:
     interview = await _get_owned_live_interview(db, interview_id, user_id)
 
@@ -123,7 +124,12 @@ async def submit_turn(
     # 이 흐름이 그동안 STT 변환에만 audio_bytes를 쓰고 U1-b 암호화 저장을
     # 호출하지 않는 것을 발견해 연결함(정책은 이미 승인됐고, 실행이
     # 누락됐던 것을 고친 것 — 새 정책 결정 아님).
-    await media_service.upload_media(db, interview.id, user_id, "audio", turn_index, audio_bytes)
+    # 2026-09-09(F-10): content_type/크기 검증은 media_service.upload_media
+    # 내부에서 일괄 처리(PayloadTooLargeError/UnsupportedMediaTypeError는
+    # AppError라 라우트의 전역 핸들러가 알아서 413/415로 변환).
+    await media_service.upload_media(
+        db, interview.id, user_id, "audio", turn_index, audio_bytes, content_type=content_type
+    )
 
     user_text = await stt.transcribe(audio_bytes)
     db.add(

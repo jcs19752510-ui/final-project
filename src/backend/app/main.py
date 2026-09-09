@@ -73,6 +73,39 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     )
 
 
+# 2026-09-09(보안 강화, F-10 — 전수검사결과_20260909101218.md §F-10): 업로드
+# 파일 1개당 크기 상한(media_service.MAX_UPLOAD_FILE_BYTES, 25MB)과는 별개로,
+# 요청 자체가 선언한 Content-Length가 지나치게 크면 멀티파트 파싱조차
+# 시작하지 않고 그 자리에서 거절한다 — 개별 파일 검증(본문을 다 읽은 뒤에야
+# 걸러짐)보다 앞단에서 한 번 더 막는 방어. 표준적인 관행(nginx
+# client_max_body_size 등)과 동일한 원리를 애플리케이션 레벨에서도 적용.
+_MAX_REQUEST_BODY_BYTES = 30 * 1024 * 1024  # 개별 파일 상한(25MB)보다 여유 있게
+
+
+@app.middleware("http")
+async def limit_request_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            declared_size = None
+        if declared_size is not None and declared_size > _MAX_REQUEST_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": {
+                        "code": "PAYLOAD_TOO_LARGE",
+                        "message": (
+                            f"요청 본문이 너무 큽니다({declared_size:,} bytes). "
+                            f"최대 {_MAX_REQUEST_BODY_BYTES:,} bytes까지 허용됩니다."
+                        ),
+                    }
+                },
+            )
+    return await call_next(request)
+
+
 app.include_router(auth.router)
 app.include_router(media.router)
 app.include_router(interview.router)

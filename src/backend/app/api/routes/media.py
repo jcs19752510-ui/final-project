@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
@@ -31,7 +32,7 @@ async def list_media(
 )
 async def upload_media(
     interview_id: UUID,
-    kind: str = Form(...),
+    kind: Literal["audio", "video_frame"] = Form(...),
     turn_index: int = Form(...),
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
@@ -39,7 +40,7 @@ async def upload_media(
 ):
     raw = await file.read()
     return await media_service.upload_media(
-        db, interview_id, current_user.id, kind, turn_index, raw
+        db, interview_id, current_user.id, kind, turn_index, raw, content_type=file.content_type
     )
 
 

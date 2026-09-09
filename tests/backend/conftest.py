@@ -15,7 +15,11 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://aimock:aimock_dev_only@localhost:55432/aimock_test"
 )
 os.environ.setdefault("JWT_SECRET", "test-only-secret")
-os.environ.setdefault("MEDIA_ENCRYPTION_KEY", "k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70=")
+# 2026-09-09(F-4, AES-256-GCM 전환): 이전 값은 Fernet(AES-128)용으로 만든
+# 키였음 — 우연히 32바이트라 새 방식에서도 길이 검증은 통과했겠지만,
+# 서로 다른 목적으로 만든 키를 재사용하지 않는다는 원칙(app/core/crypto.py
+# 에러 메시지에도 명시)을 테스트 코드도 그대로 지키기 위해 새로 발급.
+os.environ.setdefault("MEDIA_ENCRYPTION_KEY", "g8Y6tAvfu1D0t88_Yj3XWEeAraqZdnZZM6lv_Mm1WxA=")
 os.environ.setdefault("MEDIA_STORAGE_DIR", "test_uploads")
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "src" / "backend"

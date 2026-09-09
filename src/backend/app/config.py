@@ -39,3 +39,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 2026-09-09(보안 강화, F-1 — 99.모의면접_전수검사/전수검사결과_20260909101218.md):
+# jwt_secret이 기본값(공개된 문자열) 그대로면 앱을 아예 못 뜨게 막는다
+# (fail-fast). JWT는 모든 인증 요청마다 쓰이는 서명 키라, 이걸
+# media_encryption_key(app/core/crypto.py)처럼 "실제 쓰일 때"에야 늦게
+# 걸러지게 두면 앱이 겉보기엔 정상 기동한 것처럼 보여 위험이 배포/모니터링
+# 단계에서 가려질 수 있다 — 그래서 기동 시점(모듈 임포트 시점)에 즉시
+# 막는다. 로컬 docker-compose(.env)와 Render 운영 환경은 이미 실제 랜덤
+# 값을 넣어둔 상태라 영향 없고, pytest(conftest.py)도 별도 시크릿
+# ("test-only-secret")을 명시적으로 쓰고 있어 영향 없음 — 오직 "아무 값도
+# 안 넣은 상태"만 걸러낸다.
+_INSECURE_DEFAULT_JWT_SECRET = "dev-only-secret-change-me"
+if settings.jwt_secret == _INSECURE_DEFAULT_JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET 환경변수가 설정되지 않아 공개된 기본값이 그대로 쓰이고 "
+        "있습니다 — 보안상 이 상태로는 서버를 시작할 수 없습니다. "
+        "python -c \"import secrets; print(secrets.token_urlsafe(48))\" 로 "
+        "충분히 긴 무작위 값을 생성해 JWT_SECRET 환경변수(.env 또는 배포 "
+        "환경변수)에 넣으세요."
+    )

@@ -1,0 +1,11 @@
+# gitleaks 허용 목록 — 각 줄은 "커밋:파일:규칙ID:라인번호" 지문(fingerprint).
+# 2026-09-09: CI(.github/workflows/ci.yml) push 트리거를 새로 켜면서
+# 로컬 gitleaks 실측 검증(`gitleaks detect --source .`)으로 저장소 전체
+# 이력을 처음 스캔해봤고, 아래 1건을 발견했다 — .github/workflows/ci.yml의
+# `test` job이 쓰는 MEDIA_ENCRYPTION_KEY는 CI 전용 더미 값(운영 미사용,
+# AESGCM 32바이트 base64 키 형식만 맞추면 되는 테스트 픽스처)인데
+# base64 문자열 형태 때문에 "generic-api-key"로 오탐지됨. 실제 유출이
+# 아님을 확인하고 허용 처리(같은 값에 대한 인라인 `# gitleaks:allow`도
+# 그 줄에 함께 추가해뒀으나, 그건 앞으로의 커밋에만 적용되고 이미 만들어진
+# 과거 커밋은 지문으로 별도 등록해야 함).
+7c967f7e67839fa33c92ad490d89a3ff6981ce61:.github/workflows/ci.yml:generic-api-key:100

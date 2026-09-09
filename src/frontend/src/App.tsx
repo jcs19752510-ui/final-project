@@ -6,6 +6,7 @@ import { SignupPage } from "./pages/SignupPage";
 import { CandidateHomePage } from "./pages/CandidateHomePage";
 import { InterviewPage } from "./pages/InterviewPage";
 import { CodingPage } from "./pages/CodingPage";
+import { WhiteboardPage } from "./pages/WhiteboardPage";
 import { ReportPage } from "./pages/ReportPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { RecruiterReportPage } from "./pages/RecruiterReportPage";
@@ -56,6 +57,14 @@ export default function App() {
             element={
               <ProtectedRoute requireRole="candidate">
                 <CodingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/interview/:id/whiteboard"
+            element={
+              <ProtectedRoute requireRole="candidate">
+                <WhiteboardPage />
               </ProtectedRoute>
             }
           />

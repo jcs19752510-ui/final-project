@@ -5,6 +5,7 @@ from app.ai.llm import GroqProvider, LLMProvider
 from app.ai.prosody import LibrosaProsodyAnalyzer, ProsodyAnalyzer
 from app.ai.report import GroqReportGenerator, ReportGenerator
 from app.ai.stt import GroqWhisperProvider, STTProvider
+from app.ai.whiteboard import GeminiWhiteboardEvaluator, WhiteboardEvaluator
 from app.config import settings
 
 # 2026-09-08: Gemini → Groq 전환(ADR-002에 원래 계획돼 있던 방향).
@@ -23,6 +24,10 @@ _stt_provider: STTProvider = GroqWhisperProvider(settings.groq_stt_model)
 _report_generator: ReportGenerator = GroqReportGenerator()
 _emotion_analyzer: EmotionAnalyzer = DeepFaceEmotionAnalyzer()
 _prosody_analyzer: ProsodyAnalyzer = LibrosaProsodyAnalyzer()
+# 2026-09-09(F-005, 화이트보드): 사용자가 AskUserQuestion으로 "Gemini
+# 재활성화"를 선택 — 텍스트 LLM/리포트와 달리 화이트보드는 Groq로
+# 전환하지 않고 Gemini Vision을 그대로 쓴다(app/ai/whiteboard.py 참조).
+_whiteboard_evaluator: WhiteboardEvaluator = GeminiWhiteboardEvaluator()
 
 
 def get_llm_provider() -> LLMProvider:
@@ -43,3 +48,7 @@ def get_emotion_analyzer() -> EmotionAnalyzer:
 
 def get_prosody_analyzer() -> ProsodyAnalyzer:
     return _prosody_analyzer
+
+
+def get_whiteboard_evaluator() -> WhiteboardEvaluator:
+    return _whiteboard_evaluator

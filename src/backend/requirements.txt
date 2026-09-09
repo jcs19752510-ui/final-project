@@ -6,11 +6,11 @@ alembic==1.14.0
 pydantic[email]==2.13.4
 pydantic-settings==2.7.1
 bcrypt==4.2.1
-pyjwt==2.10.1
+pyjwt==2.13.0
 cryptography==44.0.0
 apscheduler==3.11.0
 pyseccomp==0.1.2
-python-multipart==0.0.20
+python-multipart==0.0.31
 pgvector==0.3.6
 google-genai==2.22.0
 groq==1.7.0
@@ -29,5 +29,11 @@ opencv-python==4.10.0.84
 
 # 테스트
 pytest==8.3.4
-pytest-asyncio==0.25.0
+# 2026-09-09: 0.25.0은 pytest.ini의 asyncio_default_test_loop_scope 옵션을
+# 인식 못 해 이벤트루프 불일치로 테스트 대다수가 실패함을 CI와 동일한
+# 고정버전 환경(Docker 컨테이너)에서 처음 실측 발견 — 로컬 anaconda
+# 환경은 우연히 더 최신 버전(1.4.0)이 깔려있어 이 문제가 안 보였음.
+# 0.26.0으로 올려 실제로 해소됨을 확인(보안 취약점 아님, 순수 호환성
+# 버그 — 앱 런타임 코드와 무관한 테스트 전용 의존성).
+pytest-asyncio==0.26.0
 httpx==0.28.1

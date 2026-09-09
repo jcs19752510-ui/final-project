@@ -51,3 +51,17 @@ class RateLimitedError(AppError):
 
     status_code = 429
     code = "RATE_LIMITED"
+
+
+class PayloadTooLargeError(AppError):
+    """2026-09-09(보안 강화, F-10) — 업로드 파일 크기 상한 초과."""
+
+    status_code = 413
+    code = "PAYLOAD_TOO_LARGE"
+
+
+class UnsupportedMediaTypeError(AppError):
+    """2026-09-09(보안 강화, F-10) — 업로드 파일의 kind/content-type 불일치."""
+
+    status_code = 415
+    code = "UNSUPPORTED_MEDIA_TYPE"

@@ -2,6 +2,12 @@ name: CI
 
 on:
   # 기준(base) 브랜치: PROD_SCH (CLAUDE.md "Git 워크플로우" 2026-09-07 선언과 일치)
+  # 2026-09-09 발견: 실제 작업은 PROD_SCH에 직접 커밋하는 방식이라
+  # pull_request 트리거만으로는 2026-09-07 이후 CI가 단 한 번도 실행되지
+  # 않았음(GitHub Actions API로 실행 이력 확인). push 트리거를 추가해
+  # 실제 작업 방식과 일치시킴(99.모의면접_전수검사 후속 검토 문서 F-2 참조).
+  push:
+    branches: [PROD_SCH]
   pull_request:
     branches: [PROD_SCH]
 
@@ -75,11 +81,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 백엔드 lint/format/type-check - ruff + mypy
+        # 2026-09-09: 버전 미고정 상태로 로컬(ruff 0.12.0/mypy 1.17.1)과
+        # 실측 대조한 결과, 최신 ruff(0.16.6)는 새 기본 규칙이 늘어 138건,
+        # 최신 mypy(2.3.1)는 메이저 버전 차이로 동작이 달라짐을 확인 —
+        # 코드 품질 저하가 아니라 "매번 다른 버전이 설치돼 결과가 안 바뀐
+        # 코드에도 재현 안 됨" 문제라 로컬에서 실제로 클린 확인된 버전으로
+        # 고정. deepface/faster_whisper/pgvector/apscheduler는 타입 스텁을
+        # 배포하지 않는 서드파티 라이브러리라 --ignore-missing-imports로
+        # 그 4개 한정 경고를 제외(우리 코드의 타입 오류는 그대로 검사됨).
         run: |
           if [ -f src/backend/requirements.txt ]; then
-            pip install ruff mypy
+            pip install ruff==0.12.0 mypy==1.17.1
             ruff check src/backend
-            mypy src/backend/app
+            mypy src/backend/app --ignore-missing-imports
           else
             echo "src/backend 없음 — 백엔드 미착수, 스킵"
           fi
@@ -97,7 +111,12 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:ci_test_only@localhost:5432/aimock_test
       JWT_SECRET: ci-test-only-secret
-      MEDIA_ENCRYPTION_KEY: k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70=
+      # 2026-09-09: CI 테스트 전용 더미 키(운영 미사용, 공개돼도 무해) —
+      # 로컬 gitleaks 실측 검증에서 "generic-api-key"로 오탐지되는 것을
+      # 확인해 같은 줄 끝에 gitleaks:allow 인라인 지시어로 허용 처리함
+      # (값 자체를 바꾸면 AESGCM 32바이트 base64 키 형식 검증에 걸려
+      # 테스트가 깨짐 — .gitleaksignore의 과거 커밋 지문도 함께 등록함).
+      MEDIA_ENCRYPTION_KEY: k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70= # gitleaks:allow
     services:
       postgres:
         image: pgvector/pgvector:pg16

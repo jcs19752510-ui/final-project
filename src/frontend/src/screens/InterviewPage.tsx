@@ -1,14 +1,32 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useParams, useRouter } from "next/navigation";
 import { interviewApi, mediaApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 
+// CandidateHomePage → InterviewPage로 첫 질문 텍스트를 1회성으로 전달하는
+// sessionStorage 키 접두사(export해 CandidateHomePage와 공유).
+export const FIRST_QUESTION_STORAGE_PREFIX = "aimock_first_question_";
+
 export function InterviewPage() {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation() as { state?: { firstQuestion?: string } };
-  const navigate = useNavigate();
+  const router = useRouter();
 
-  const [question, setQuestion] = useState(location.state?.firstQuestion ?? "질문을 불러오는 중...");
+  const [question, setQuestion] = useState("질문을 불러오는 중...");
+
+  // 2026-09-18(Next.js 전환): react-router의 location.state를 대체 —
+  // CandidateHomePage가 미리 넣어둔 첫 질문을 읽고 즉시 지운다(새로고침 시
+  // 재사용되지 않도록 1회성).
+  useEffect(() => {
+    if (!id) return;
+    const key = FIRST_QUESTION_STORAGE_PREFIX + id;
+    const saved = sessionStorage.getItem(key);
+    if (saved) {
+      setQuestion(saved);
+      sessionStorage.removeItem(key);
+    }
+  }, [id]);
   const [turnIndex, setTurnIndex] = useState(0);
   const [recording, setRecording] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -144,7 +162,7 @@ export function InterviewPage() {
     setSubmitting(true);
     try {
       await interviewApi.end(id);
-      navigate(`/interview/${id}/coding`);
+      router.push(`/interview/${id}/coding`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "면접 종료 처리에 실패했습니다.");
     } finally {

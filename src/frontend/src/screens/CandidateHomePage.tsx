@@ -1,12 +1,15 @@
+"use client";
+
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../state/AuthContext";
 import { interviewApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
+import { FIRST_QUESTION_STORAGE_PREFIX } from "./InterviewPage";
 
 export function CandidateHomePage() {
   const { user, withdraw } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [jobRole, setJobRole] = useState("백엔드 개발자");
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -18,7 +21,12 @@ export function CandidateHomePage() {
     setStarting(true);
     try {
       const res = await interviewApi.start(jobRole);
-      navigate(`/interview/${res.interview_id}`, { state: { firstQuestion: res.question_text } });
+      // 2026-09-18(Next.js 전환): react-router의 navigate(path, {state})는
+      // Next.js 라우터에 대응하는 기능이 없어, 다음 페이지가 그 즉시(모달
+      // 없이) 읽어갈 수 있게 sessionStorage로 1회성 전달한다(InterviewPage가
+      // 마운트 시 읽고 곧바로 지움).
+      sessionStorage.setItem(FIRST_QUESTION_STORAGE_PREFIX + res.interview_id, res.question_text);
+      router.push(`/interview/${res.interview_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "면접을 시작하지 못했습니다.");
     } finally {
@@ -28,7 +36,7 @@ export function CandidateHomePage() {
 
   async function handleWithdraw() {
     await withdraw();
-    navigate("/login");
+    router.push("/login");
   }
 
   return (

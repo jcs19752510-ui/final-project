@@ -44,6 +44,10 @@ os.environ.setdefault("JWT_SECRET", "test-only-secret")
 # 에러 메시지에도 명시)을 테스트 코드도 그대로 지키기 위해 새로 발급.
 os.environ.setdefault("MEDIA_ENCRYPTION_KEY", "g8Y6tAvfu1D0t88_Yj3XWEeAraqZdnZZM6lv_Mm1WxA=")
 os.environ.setdefault("MEDIA_STORAGE_DIR", "test_uploads")
+# 2026-09-18(ADR-003 갱신, Celery 재도입): 테스트에서는 실제 Redis 브로커
+# 없이 `.delay()` 호출이 즉시 동기 실행되도록 강제한다 — 운영 기본값
+# (False)과 분리(app/config.py celery_task_always_eager 참조).
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "True")
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "src" / "backend"
 sys.path.insert(0, str(BACKEND_ROOT))
@@ -96,21 +100,34 @@ def _fake_providers():
 
 
 @pytest.fixture(autouse=True)
-def _fake_report_generator():
-    """aimock_u4_trd.md AC-2: 실제 Gemini 대신 Fake로 리포트 생성 오케스트레이션 검증."""
+def _fake_report_generator(monkeypatch):
+    """aimock_u4_trd.md AC-2: 실제 Gemini 대신 Fake로 리포트 생성 오케스트레이션 검증.
+
+    2026-09-18(ADR-003 갱신): 리포트 생성이 Celery 태스크(app/tasks.py)로
+    옮겨가면서 `get_report_generator()`가 더 이상 FastAPI `Depends()`를
+    거치지 않고 태스크 함수 안에서 직접 호출된다 — `app.dependency_overrides`
+    는 FastAPI 라우팅 계층에서만 작동하므로 그것만으로는 태스크에 Fake가
+    반영되지 않는다. 그래서 `app.ai.providers`의 모듈 전역 싱글턴 자체를
+    monkeypatch한다(라우트가 아직 Depends로 쓰는 경로가 남아있을 수 있어
+    dependency_overrides도 함께 유지)."""
     fake_report = FakeReportGenerator()
     app.dependency_overrides[get_report_generator] = lambda: fake_report
+    monkeypatch.setattr("app.ai.providers._report_generator", fake_report)
     yield fake_report
     app.dependency_overrides.pop(get_report_generator, None)
 
 
 @pytest.fixture(autouse=True)
-def _fake_emotion_prosody_analyzers():
-    """aimock_u3b_trd.md — 실제 DeepFace/librosa 모델 로딩 없이 고정값으로 검증."""
+def _fake_emotion_prosody_analyzers(monkeypatch):
+    """aimock_u3b_trd.md — 실제 DeepFace/librosa 모델 로딩 없이 고정값으로 검증.
+    2026-09-18: 위 _fake_report_generator와 동일한 이유로 모듈 전역
+    싱글턴도 함께 monkeypatch(Celery 태스크가 직접 호출)."""
     fake_emotion = FakeEmotionAnalyzer()
     fake_prosody = FakeProsodyAnalyzer()
     app.dependency_overrides[get_emotion_analyzer] = lambda: fake_emotion
     app.dependency_overrides[get_prosody_analyzer] = lambda: fake_prosody
+    monkeypatch.setattr("app.ai.providers._emotion_analyzer", fake_emotion)
+    monkeypatch.setattr("app.ai.providers._prosody_analyzer", fake_prosody)
     yield fake_emotion, fake_prosody
     app.dependency_overrides.pop(get_emotion_analyzer, None)
     app.dependency_overrides.pop(get_prosody_analyzer, None)

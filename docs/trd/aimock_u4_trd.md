@@ -48,7 +48,15 @@ sequenceDiagram
 - 의존하는 다른 단위: U2-a(transcripts), U2-b(coding_submissions)
 - 의존받는 단위: U5(대시보드 — 채용담당자가 이 리포트를 열람)
 
-## §0-2. 리포트 생성 비동기화 (2026-09-08 추가)
+## §0-2. 리포트 생성 비동기화 (2026-09-08 추가, 2026-09-18 실행 수단 갱신)
+
+> **2026-09-18 갱신**: 아래 §0-2 전체의 실행 수단이 FastAPI
+> `BackgroundTasks`에서 **Celery(Redis 브로커) 워커**로 바뀌었다(ADR-003
+> 갱신 참조) — 원본 계획서 아키텍처와의 정합을 맞추기 위해 사용자가
+> 명시적으로 요청한 변경. 아래 서술은 개념적으로는 그대로 유효하나("응답은
+> 즉시 반환, 무거운 작업은 나중에") 실행 프로세스가 같은 uvicorn
+> 프로세스(BackgroundTasks) → **별도 `worker` 컨테이너**(Celery)로
+> 바뀌었다.
 
 **계기**: 운영 환경(Render)에서 사용자가 "피드백 리포트 생성이 1분 이상
 걸린다"를 실제로 보고. 원인은 위 §0 흐름도가 `POST /report` 한 번의
@@ -67,7 +75,8 @@ HTTP 요청 안에서 LLM 호출 + 턴마다 저장된 `video_frame` 전부를 D
 sequenceDiagram
     participant C as 지원자(브라우저)
     participant API as Core API
-    participant BG as BackgroundTasks(응답 후 실행)
+    participant R as Redis(브로커)
+    participant W as Celery Worker(별도 컨테이너)
     participant AI as LLM/DeepFace/librosa
     participant DB as PostgreSQL
 
@@ -75,16 +84,17 @@ sequenceDiagram
     API->>DB: interview.status==completed 확인
     API->>DB: evaluation_reports upsert(status=processing,<br/>processing_started_at=now)
     API-->>C: 202 {status: "processing"}
-    API-->>BG: background_tasks.add_task(run_report_generation)
-    Note over API,BG: 응답이 이미 나간 뒤 실행 — 지원자는 기다리지 않음
-    BG->>DB: transcripts/coding_submissions 조회(독립된 새 DB 세션)
-    BG->>AI: LLM 요약 + DeepFace(프레임별) + librosa(오디오별)
-    AI-->>BG: 점수/요약/표정/운율 결과
+    API->>R: run_report_generation_task.delay(interview_id)
+    Note over API,R: 태스크 발행 즉시 반환 — 지원자는 기다리지 않음
+    R-->>W: 워커가 큐를 소비(별도 프로세스)
+    W->>DB: transcripts/coding_submissions 조회(독립된 새 DB 세션)
+    W->>AI: LLM 요약 + DeepFace(프레임별) + librosa(오디오별)
+    AI-->>W: 점수/요약/표정/운율 결과
     alt 성공
-        BG->>DB: status=completed, 점수/details_json 저장
+        W->>DB: status=completed, 점수/details_json 저장
     else 예외 발생(무엇이든)
-        BG->>DB: status=failed, error_message=안전한 일반 문구
-        Note over BG: 원본 예외 문자열은 서버 로그에만 남기고<br/>사용자에게는 절대 노출 안 함(보안)
+        W->>DB: status=failed, error_message=안전한 일반 문구
+        Note over W: 원본 예외 문자열은 서버 로그에만 남기고<br/>사용자에게는 절대 노출 안 함(보안)
     end
 
     loop 프론트가 짧은 간격으로 폴링
@@ -111,9 +121,19 @@ flowchart TD
   이 경우 롤백 후 방금 다른 요청이 만든 행을 다시 읽어 같은 로직(중복
   실행 방지)을 그대로 적용한다(`report_service.start_report_generation`).
 - **세션 분리 필수**: 백그라운드 작업은 요청 처리 세션(`get_db` 의존성)이
-  아니라 **독립적인 새 `AsyncSessionLocal()` 세션**을 직접 연다 — 요청
-  세션은 응답이 나갈 때 이미 닫히므로 재사용하면 버그(FastAPI
-  BackgroundTasks의 잘 알려진 함정).
+  아니라 **독립적인 새 `AsyncSessionLocal()` 세션**을 직접 연다 — 원래는
+  FastAPI BackgroundTasks가 같은 프로세스를 쓰기 때문이었지만, Celery
+  워커는 애초에 완전히 다른 프로세스라 세션 공유 자체가 불가능해 이
+  원칙이 더 이상 "권장"이 아니라 "필수 전제"가 됐다.
+- **Celery 워커 고유 함정(2026-09-18)**: (1) provider(LLM/감정/음성분석
+  클라이언트)는 직렬화가 안 돼 태스크 인자로 못 넘김 — 태스크는
+  `interview_id`만 받고 워커 프로세스 안에서 `app.ai.providers`를 직접
+  호출한다. (2) 프로세스 전역 DB `engine`의 커넥션 풀이 이벤트 루프에
+  묶여 있어, 태스크마다 새 `asyncio.run()`을 쓰면 두 번째 태스크부터
+  깨진다 — 태스크 종료마다 `engine.dispose()` 필요. (3) 테스트(eager
+  모드)는 이미 실행 중인 이벤트 루프 안에서 태스크가 호출돼
+  `asyncio.run()`이 충돌하므로 별도 스레드로 우회. 상세 근거는
+  `docs/adr/adr-003-data-stack.md` §갱신 참조.
 - **실패 메시지 보안**: 프로젝트 자체 예외(`AppError`, 예: LLM API 키
   미설정)는 이미 사용자에게 노출해도 안전한 메시지를 담고 있어 그대로
   사용하지만, 그 외 예상 못 한 예외는 절대 `str(exc)`를 그대로 노출하지

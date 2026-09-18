@@ -20,13 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.emotion import UNKNOWN_EMOTION, EmotionAnalyzer, EmotionResult
 from app.ai.prosody import FALLBACK_RESULT as PROSODY_FALLBACK_RESULT
 from app.ai.prosody import ProsodyAnalyzer
-from app.ai.report import ReportContext, ReportGenerator
+from app.ai.report import ReportContext, ReportGenerator, ReportResult
 from app.core.errors import AppError, ConflictError, ForbiddenError, NotFoundError
 from app.db import AsyncSessionLocal
 from app.models.coding_submission import CodingSubmission
 from app.models.evaluation_report import EvaluationReport
 from app.models.interview import Interview
 from app.models.media_asset import MediaAsset
+from app.models.question import Question
 from app.models.transcript import Transcript
 from app.services import keyword_extractor, media_service
 
@@ -240,6 +241,31 @@ async def _build_voice_prosody(
     return prosody
 
 
+async def _build_rubric_context(db: AsyncSession, interview_id: UUID) -> list[dict]:
+    """2026-09-18: Question.rubric_json(REQ-F-007)을 리포트 생성까지 실제로
+    전달한다. 질문 은행에서 뽑힌 질문 중 `question_id`가 실제로 남아있는
+    턴(현재는 오프닝 질문만 확실히 연결됨 — 이후 턴은 LLM이 후보를 참고만
+    하고 자유 형식으로 질문을 만들어 question_id를 못 붙임, aimock_u2a
+    설계상 제약)만 대상으로 한다. 부분적이지만, 있는 연결만이라도 실제로
+    평가에 반영하는 것이 아예 안 쓰는 것보다 원안(REQ-F-007)에 가깝다."""
+    stmt = (
+        select(Transcript.text, Question.rubric_json)
+        .join(Question, Transcript.question_id == Question.id)
+        .where(Transcript.interview_id == interview_id, Question.rubric_json != {})
+    )
+    rows = (await db.execute(stmt)).all()
+    return [{"question": text, "rubric": rubric} for text, rubric in rows]
+
+
+def _compute_overall_score(result: ReportResult) -> float:
+    """Interviews.overall_score(원본 ERD, 그동안 죽은 컬럼) — 리포트의 세
+    하위 점수(기술/커뮤니케이션/조직적합성) 평균으로 정의한다. 세 점수와
+    별개의 새로운 채점 기준을 만들지 않기 위한 가장 단순하고 설명 가능한
+    정의."""
+    scores = [result.technical_score, result.communication_score, result.cultural_fit_score]
+    return sum(scores) / len(scores)
+
+
 async def run_report_generation(
     interview_id: UUID,
     generator: ReportGenerator,
@@ -282,12 +308,14 @@ async def run_report_generation(
 
             user_texts = [t.text for t in transcripts if t.speaker == "user"]
             keywords = keyword_extractor.extract(user_texts)
+            rubric_context = await _build_rubric_context(db, interview_id)
 
             context = ReportContext(
                 job_role=interview.job_role,
                 transcript_lines=[f"{t.speaker}: {t.text}" for t in transcripts],
                 code_submissions=[s.code for s in submissions],
                 keywords=keywords,
+                rubric_context=rubric_context,
             )
             run_started = time.monotonic()
             llm_started = time.monotonic()
@@ -323,9 +351,17 @@ async def run_report_generation(
                 "pass_recommendation": result.pass_recommendation,
                 "emotion_timeline": emotion_timeline,
                 "voice_prosody": voice_prosody,
+                # 2026-09-18: REQ-F-007 원안(루브릭 기반 채점)을 실제로 반영 —
+                # Question.rubric_json → 프롬프트 → LLM의 rubric_match 응답을
+                # 그대로 리포트에 저장. rubric_context가 비어 있었다면 LLM도
+                # 빈 dict를 반환하도록 프롬프트에서 안내함(app/ai/report.py).
+                "rubric_match": result.rubric_match,
             }
             report.status = "completed"
             report.error_message = None
+            # 2026-09-18: Interviews.overall_score(원본 ERD, 그동안 죽은
+            # 컬럼) — 리포트의 세 하위 점수 평균으로 채운다.
+            interview.overall_score = _compute_overall_score(result)
             await db.commit()
         except Exception as exc:  # noqa: BLE001 — 백그라운드 작업이라 예외를 밖으로 던져도 아무도 못 받음, 반드시 여기서 흡수하고 상태로 남겨야 함
             # 실패한 트랜잭션이 있을 수 있으니 롤백 후, 실패 표시는 별도

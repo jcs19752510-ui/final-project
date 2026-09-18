@@ -1,3 +1,5 @@
+"use client";
+
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { authApi } from "../api/endpoints";
 import { setAuthToken, getAuthToken, SESSION_EXPIRED_EVENT } from "../api/client";

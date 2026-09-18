@@ -1,5 +1,7 @@
 # ADR-005: 로컬 Docker Compose 배포(Kubernetes/GCP 대체)
-# ADR-003: PostgreSQL + pgvector 단일 DB (Redis/Celery 없음)
+# ADR-003: PostgreSQL + pgvector 단일 DB
+# 2026-09-18(ADR-003 갱신): Celery+Redis 재도입 — 원본 계획서 아키텍처와
+# 정합을 맞추기 위해 사용자 요청으로 복원(redis + worker 서비스 추가).
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -18,6 +20,17 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      # 호스트 포트도 postgres와 같은 이유로 기본 6379 대신 여유 포트 사용
+      - "56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build:
       context: ./src/backend
@@ -25,6 +38,8 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://aimock:aimock_dev_only@postgres:5432/aimock
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -38,18 +53,42 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    # 2026-09-18 신규: 리포트 생성(app/tasks.py)을 실제로 처리하는 별도
+    # Celery 워커 프로세스 — app과 같은 이미지를 재사용하고 커맨드만 바꾼다.
+    build:
+      context: ./src/backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aimock:aimock_dev_only@postgres:5432/aimock
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=1
+    volumes:
+      - ./src/backend:/app:ro
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
-    # 프로덕션 정적 빌드 확인용(2026-09-08 추가). 기본값으로는 안 뜸 —
-    # `docker compose --profile prod up -d`로만 실행. 평소 개발은
-    # `cd src/frontend && npm run dev`(포트 5173) 그대로 사용.
+    # 프로덕션 빌드 확인용(2026-09-08 추가, 2026-09-18 Next.js 전환으로
+    # nginx 정적 서빙 → Node 서버(포트 3000) 구동으로 교체). 기본값으로는
+    # 안 뜸 — `docker compose --profile prod up -d`로만 실행. 평소 개발은
+    # `cd src/frontend && npm run dev`(포트 3000) 그대로 사용.
     profiles: ["prod"]
     build:
       context: ./src/frontend
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
     ports:
-      - "8080:80"
+      - "8080:3000"
     depends_on:
       - app
 

@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # 로컬 개발용 origin은 app/main.py에 이미 하드코딩돼 있어 이 값은
     # 비워둬도(None) 로컬 개발에 영향 없음.
     frontend_origins: str | None = None
+    # 2026-09-18: ADR-003 갱신(Celery+Redis 재도입) — 원본 계획서 아키텍처와
+    # 정합을 맞추기 위해 사용자가 직접 요청. 로컬 Docker Compose 기준 기본값,
+    # 운영(Render)은 별도 관리형 Redis(Upstash 등) URL을 환경변수로 주입.
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/0"
+    # True면 .delay() 호출이 브로커를 거치지 않고 호출 스레드에서 즉시
+    # 동기 실행된다(pytest 전용 — conftest.py가 테스트 환경에서만 True로
+    # 오버라이드). 운영 기본값은 반드시 False.
+    celery_task_always_eager: bool = False
 
 
 settings = Settings()

@@ -24,8 +24,13 @@
 
 ## 언어/프레임워크
 - 백엔드: Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy(async) + Alembic
-- 프론트엔드: React + Vite + TypeScript (Next.js는 SSR/라우팅 오버헤드가
-  이번 규모에 불필요하다고 판단해 제외 — 필요 시 재검토)
+- 프론트엔드: React + Next.js(App Router) + TypeScript. **2026-09-18 갱신**:
+  원래 "Next.js는 SSR/라우팅 오버헤드가 이번 규모에 불필요"하다고 판단해
+  Vite+react-router-dom을 썼으나, 사용자가 원본 계획서(§4.1)와의 아키텍처
+  정합을 위해 재전환을 명시적으로 요청 — SSR은 여전히 쓰지 않고
+  (`"use client"` 위주 구성) 파일 기반 라우팅만 실질적으로 활용. 빌드는
+  `output: "standalone"`으로 얇게 유지(`docker-compose.yml` frontend 서비스
+  참조). vitest는 유지(Next.js 프로젝트에서도 공식적으로 지원되는 조합).
 - DB: PostgreSQL 16 + pgvector 확장 (ADR-003)
 
 ## API 규약
@@ -51,7 +56,7 @@ src/
   backend/
     app/
       api/            # FastAPI 라우터
-      services/        # 비즈니스 로직 (BackgroundTasks에서 재사용 가능하게 분리)
+      services/        # 비즈니스 로직 (Celery 태스크/라우터 양쪽에서 재사용 가능하게 분리, 2026-09-18 갱신)
       models/          # SQLAlchemy 모델
       schemas/         # Pydantic 스키마
       ai/              # LLM/STT/감정분석 어댑터

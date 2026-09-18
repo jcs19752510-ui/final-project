@@ -1,11 +1,14 @@
+"use client";
+
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../state/AuthContext";
 import { ApiError } from "../api/client";
 
 export function LoginPage() {
   const { login, sessionExpired, dismissSessionExpired } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +20,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const user = await login(email, password);
-      navigate(user.role === "recruiter" ? "/dashboard" : "/");
+      router.push(user.role === "recruiter" ? "/dashboard" : "/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "로그인에 실패했습니다.");
     } finally {
@@ -60,7 +63,7 @@ export function LoginPage() {
         </button>
       </form>
       <p>
-        계정이 없으신가요? <Link to="/signup">회원가입</Link>
+        계정이 없으신가요? <Link href="/signup">회원가입</Link>
       </p>
     </div>
   );

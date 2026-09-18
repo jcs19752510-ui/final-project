@@ -1,5 +1,7 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "next/navigation";
 import { mediaApi, reportApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { ReportDetails } from "../components/ReportDetails";

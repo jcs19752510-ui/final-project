@@ -132,9 +132,10 @@ async def submit_turn(
     )
 
     user_text = await stt.transcribe(audio_bytes)
-    db.add(
-        Transcript(interview_id=interview.id, turn_index=turn_index, speaker="user", text=user_text)
+    user_transcript = Transcript(
+        interview_id=interview.id, turn_index=turn_index, speaker="user", text=user_text
     )
+    db.add(user_transcript)
 
     if len(user_text) > settings.turn_max_answer_chars:
         reply_text = LENGTH_LIMIT_NOTICE
@@ -159,13 +160,20 @@ async def submit_turn(
     context = ConversationContext(
         job_role=interview.job_role,
         history=history,
-        candidate_questions=[q.content for q in candidates],
+        candidate_questions=[
+            {"content": q.content, "rubric": q.rubric_json} for q in candidates
+        ],
         question_number=asked_count + 1,
         min_questions=settings.interview_min_questions,
         max_questions=settings.interview_max_questions,
     )
     result = await llm.generate_next_turn(context)
     result = _enforce_question_count_bounds(result, asked_count, candidates)
+
+    if result.evaluation:
+        raw_sentiment = result.evaluation.get("sentiment_score")
+        if isinstance(raw_sentiment, (int, float)):
+            user_transcript.sentiment_score = float(raw_sentiment)
 
     db.add(
         Transcript(

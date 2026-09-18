@@ -27,6 +27,11 @@ librosa==0.10.2.post1
 # `cv2.CascadeClassifier` 등이 깨짐 — 이것도 실제로 겪음).
 opencv-python==4.10.0.84
 
+# 2026-09-18(ADR-003 갱신): 원본 계획서 아키텍처(Celery+Redis 비동기 처리)에
+# 정합을 맞추기 위해 재도입 — 리포트 생성만 대상(app/tasks.py).
+celery==5.4.0
+redis==5.2.1
+
 # 테스트
 pytest==8.3.4
 # 2026-09-09: 0.25.0은 pytest.ini의 asyncio_default_test_loop_scope 옵션을

@@ -1,5 +1,7 @@
+"use client";
+
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { recruiterApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { InterviewSummary, StatsResponse } from "../api/types";
@@ -61,7 +63,7 @@ export function DashboardPage() {
                 <td>{i.status}</td>
                 <td>{i.pass_recommendation === null ? "-" : i.pass_recommendation ? "추천" : "비추천"}</td>
                 <td>
-                  <Link to={`/dashboard/report/${i.interview_id}`}>리포트 보기</Link>
+                  <Link href={`/dashboard/report/${i.interview_id}`}>리포트 보기</Link>
                 </td>
               </tr>
             ))}

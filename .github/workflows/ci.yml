@@ -117,6 +117,12 @@ jobs:
       # (값 자체를 바꾸면 AESGCM 32바이트 base64 키 형식 검증에 걸려
       # 테스트가 깨짐 — .gitleaksignore의 과거 커밋 지문도 함께 등록함).
       MEDIA_ENCRYPTION_KEY: k86IFwa9sPVr0re2TATgKNzRs_yuQInAWQzrApfYD70= # gitleaks:allow
+    # 2026-09-18(ADR-003 갱신, Celery 재도입): 여기 Redis 서비스를 추가하지
+    # 않는다 — tests/backend/conftest.py가 CELERY_TASK_ALWAYS_EAGER=True를
+    # 강제해 `.delay()`가 브로커 없이 호출 스레드에서 즉시 동기 실행되기
+    # 때문(Celery eager 모드의 표준 동작, 실제로 Redis 없이 전체 스위트가
+    # 통과함을 로컬에서 확인). 실제 Redis 경유 워커 동작은 docker-compose
+    # (redis+worker 서비스)로 수동 검증했다 — 내부테스트결과서 참조.
     services:
       postgres:
         image: pgvector/pgvector:pg16

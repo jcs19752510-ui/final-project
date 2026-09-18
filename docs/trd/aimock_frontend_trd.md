@@ -1,4 +1,13 @@
-# 프론트엔드 통합 TRD — 웹 AI 모의면접 플랫폼 (React/Vite)
+# 프론트엔드 통합 TRD — 웹 AI 모의면접 플랫폼 (React/Next.js)
+
+> **2026-09-18 갱신**: 빌드 도구/라우팅을 Vite+react-router-dom에서
+> Next.js(App Router)로 전환(원본 계획서 §4.1과의 정합을 위한 사용자
+> 명시적 요청 — `docs/tech_conventions.md` 프론트엔드 항목 참조). 화면
+> 목록·API 계약·AC 등 이 문서의 나머지 내용은 라우팅 기술 변경과 무관하게
+> 그대로 유효 — react-router의 `useNavigate`/`useParams`/`<Route>`가
+> `next/navigation`의 `useRouter`/`useParams`와 App Router 파일 기반
+> 라우팅(`src/app/`)으로 1:1 대응 전환됐을 뿐, 화면 구성이나 동작은
+> 바뀌지 않았다.
 
 > `harness/harness_01_trd_template.md` 형식을 프론트엔드 전체 스코프에
 > 맞게 적용. 상위 문서: `docs/trd/aimock_master_trd.md` §1(화면 목록).

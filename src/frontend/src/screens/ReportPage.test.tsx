@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { useParams } from "next/navigation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportPage } from "./ReportPage";
 import { reportApi, mediaApi } from "../api/endpoints";
@@ -16,14 +16,16 @@ vi.mock("../api/endpoints", () => ({
   },
 }));
 
+// 2026-09-18(Next.js 전환): react-router의 MemoryRouter/Route 대신
+// next/navigation의 useParams를 직접 mock — ReportPage가 더 이상
+// react-router 컨텍스트에 의존하지 않는다.
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
+}));
+
 function renderAt(id: string) {
-  return render(
-    <MemoryRouter initialEntries={[`/report/${id}`]}>
-      <Routes>
-        <Route path="/report/:id" element={<ReportPage />} />
-      </Routes>
-    </MemoryRouter>
-  );
+  vi.mocked(useParams).mockReturnValue({ id });
+  return render(<ReportPage />);
 }
 
 describe("ReportPage — 409 처리 회귀 테스트", () => {

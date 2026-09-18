@@ -1,5 +1,7 @@
+"use client";
+
 import { useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams, useRouter } from "next/navigation";
 import { whiteboardApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import type { WhiteboardSnapshotResponse } from "../api/types";
@@ -12,7 +14,7 @@ const CANVAS_HEIGHT = 480;
 // AskUserQuestion 2026-09-09 — "Gemini 재활성화").
 export function WhiteboardPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -129,7 +131,7 @@ export function WhiteboardPage() {
         </div>
       )}
 
-      <button className="secondary" onClick={() => navigate(`/report/${id}`)}>
+      <button className="secondary" onClick={() => router.push(`/report/${id}`)}>
         리포트 화면으로 이동
       </button>
     </div>

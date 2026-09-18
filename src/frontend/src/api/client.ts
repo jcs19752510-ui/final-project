@@ -1,6 +1,8 @@
 import type { ApiErrorBody } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// 2026-09-18(Next.js 전환): Vite의 VITE_ 접두사 대신 Next.js의
+// NEXT_PUBLIC_ 접두사를 사용해야 클라이언트 번들에 값이 실린다.
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   code: string;
@@ -13,7 +15,11 @@ export class ApiError extends Error {
   }
 }
 
-let authToken: string | null = sessionStorage.getItem("aimock_token");
+// Next.js는 클라이언트 컴포넌트도 최초 HTML을 서버에서 한 번 렌더링한다
+// (SSR pass) — 그 시점엔 `sessionStorage`가 없는 Node 환경이라, 모듈 최상단
+// 평가 시 바로 호출하면 서버에서 죽는다. `typeof window` 가드로 방어.
+let authToken: string | null =
+  typeof window !== "undefined" ? sessionStorage.getItem("aimock_token") : null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;

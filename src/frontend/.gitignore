@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Next.js (2026-09-18 전환)
+.next
+next-env.d.ts
+# next dev/build가 자동 생성하는 파일(node_modules/next/dist/server/lib/
+# generate-agent-files.js) — 이 저장소의 단일 진실 공급원인 루트
+# CLAUDE.md와 별개의 프레임워크 자동 생성물이라 커밋하지 않는다.
+AGENTS.md
+CLAUDE.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

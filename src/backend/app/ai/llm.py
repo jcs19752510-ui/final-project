@@ -45,7 +45,11 @@ SYSTEM_PROMPT = (
 class ConversationContext:
     job_role: str
     history: list[dict[str, str]] = field(default_factory=list)  # [{speaker, text}]
-    candidate_questions: list[str] = field(default_factory=list)
+    # 2026-09-18: content만 담던 list[str]에서 {"content", "rubric"} dict로
+    # 확장 — Question.rubric_json(REQ-F-007 원안의 채점 기준)을 실제로
+    # LLM 프롬프트까지 전달하기 위함(그전까진 컬럼에 값만 있고 아무도
+    # 안 읽는 죽은 컬럼이었음).
+    candidate_questions: list[dict] = field(default_factory=list)
     # ADR-008 연계(2026-09-08): 면접이 안 끝나는 문제 수정용 — 서버가
     # question_number/min/max를 계산해 넘겨주면 LLM이 진행 상황을 인지하고
     # 최소/최대 질문 개수 규칙을 따를 수 있다. interview_service.submit_turn
@@ -66,10 +70,19 @@ class LLMProvider(ABC):
     async def generate_next_turn(self, context: ConversationContext) -> LLMTurnResult: ...
 
 
+def _format_candidate_hint(candidate: dict) -> str:
+    content = candidate.get("content", "")
+    rubric = candidate.get("rubric") or {}
+    if not rubric:
+        return f"- {content}"
+    criteria = "; ".join(f"{k}({v})" for k, v in rubric.items())
+    return f"- {content} [채점 기준: {criteria}]"
+
+
 def _build_user_message(context: ConversationContext) -> str:
     """Gemini/Groq 공용 — 대화 이력 + 질문 후보를 하나의 사용자 메시지로."""
     history_text = "\n".join(f"{turn['speaker']}: {turn['text']}" for turn in context.history)
-    hints = "\n".join(f"- {q}" for q in context.candidate_questions)
+    hints = "\n".join(_format_candidate_hint(q) for q in context.candidate_questions)
     return (
         f"직무: {context.job_role}\n\n"
         f"[대화 이력]\n{history_text}\n\n"
@@ -83,7 +96,16 @@ def _build_user_message(context: ConversationContext) -> str:
         '다음 JSON 스키마로만 응답하세요: '
         '{"reply_text": "면접관 발화(질문 또는 종료 인사)", '
         '"action": "ask_question 또는 end_interview", '
-        '"evaluation": {"technical_accuracy": 1-5, "key_observations": ["..."]} (선택)}'
+        '"evaluation": {"technical_accuracy": 1-5, "key_observations": ["..."], '
+        '"sentiment_score": "방금 지원자 답변의 어조를 1(매우 불안/부정적)~'
+        '5(매우 자신감있음/긍정적)로 평가, 인구통계적 특징과 무관하게 어조만 '
+        '평가", '
+        '"rubric_match": {"[질문 후보에 표시된 채점 기준 항목명]": true/false, '
+        '"...": "..."} (방금 지원자가 답변한 질문의 채점 기준이 위 [참고 '
+        '가능한 질문 후보] 목록에 있었다면, 그 기준 항목별로 답변이 그 '
+        '기준을 충족했는지 평가)} '
+        '(evaluation 전체는 선택 — 오프닝 질문 등 아직 지원자 답변이 없으면 '
+        '생략 가능)}'
     )
 
 

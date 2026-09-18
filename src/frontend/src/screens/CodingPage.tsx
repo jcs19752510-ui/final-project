@@ -1,5 +1,7 @@
+"use client";
+
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams, useRouter } from "next/navigation";
 import Editor from "@monaco-editor/react";
 import { codingApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
@@ -17,7 +19,7 @@ const DEFAULT_CODE: Record<Language, string> = {
 
 export function CodingPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [language, setLanguage] = useState<Language>("python");
   const [code, setCode] = useState(DEFAULT_CODE.python);
   const [result, setResult] = useState<CodeSubmissionResponse | null>(null);
@@ -94,7 +96,7 @@ export function CodingPage() {
           )}
         </div>
       )}
-      <button className="secondary" onClick={() => navigate(`/interview/${id}/whiteboard`)}>
+      <button className="secondary" onClick={() => router.push(`/interview/${id}/whiteboard`)}>
         화이트보드로 이동
       </button>
     </div>

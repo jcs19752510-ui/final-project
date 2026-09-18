@@ -1,5 +1,8 @@
+"use client";
+
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { recruiterApi } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { ReportDetails } from "../components/ReportDetails";
@@ -22,7 +25,7 @@ export function RecruiterReportPage() {
 
   return (
     <div className="page">
-      <Link to="/dashboard">← 대시보드로</Link>
+      <Link href="/dashboard">← 대시보드로</Link>
       <h1>지원자 리포트</h1>
       {error && (
         <p className="form-error" role="alert">

@@ -95,6 +95,76 @@ async def test_ac2b_turn_persists_original_audio_as_encrypted_media(client, db_s
     assert assets[0].encrypted is True
 
 
+async def test_ac2d_turn_persists_sentiment_score_from_llm_evaluation(client, db_session, _fake_providers):
+    """2026-09-18 추가 — 원본 ERD(계획서 §6.1)의 Transcripts.sentiment_score가
+    구현에서 누락돼 있던 것을 발견해 채움. LLM evaluation.sentiment_score를
+    user 발화 Transcript 행에 반영한다."""
+    fake_llm, _ = _fake_providers
+    fake_llm.evaluation = {"technical_accuracy": 4, "sentiment_score": 4.5}
+
+    token = await _signup_and_login(client)
+    start = await client.post(
+        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+    )
+    interview_id = start.json()["interview_id"]
+
+    resp = await client.post(
+        f"/api/v1/interviews/{interview_id}/turns",
+        headers=_auth(token),
+        data={"turn_index": "0"},
+        files={"audio": ("a.webm", "자신있게 답변합니다.".encode("utf-8"), "audio/webm")},
+    )
+    assert resp.status_code == 200
+
+    from app.models.transcript import Transcript
+
+    rows = list(
+        (
+            await db_session.scalars(
+                select(Transcript)
+                .where(Transcript.interview_id == interview_id, Transcript.speaker == "user")
+            )
+        ).all()
+    )
+    assert len(rows) == 1
+    assert rows[0].sentiment_score == 4.5
+
+
+async def test_ac2e_missing_sentiment_score_in_evaluation_leaves_column_null(
+    client, db_session, _fake_providers
+):
+    """LLM이 evaluation을 아예 안 주거나 sentiment_score를 빼도 서버가 죽지
+    않고 null로 남아야 한다(AC-4 폴백 원칙과 동일한 관용성)."""
+    fake_llm, _ = _fake_providers
+    fake_llm.evaluation = {"technical_accuracy": 3}  # sentiment_score 없음
+
+    token = await _signup_and_login(client)
+    start = await client.post(
+        "/api/v1/interviews", headers=_auth(token), json={"job_role": "backend"}
+    )
+    interview_id = start.json()["interview_id"]
+
+    resp = await client.post(
+        f"/api/v1/interviews/{interview_id}/turns",
+        headers=_auth(token),
+        data={"turn_index": "0"},
+        files={"audio": ("a.webm", "답변".encode("utf-8"), "audio/webm")},
+    )
+    assert resp.status_code == 200
+
+    from app.models.transcript import Transcript
+
+    rows = list(
+        (
+            await db_session.scalars(
+                select(Transcript)
+                .where(Transcript.interview_id == interview_id, Transcript.speaker == "user")
+            )
+        ).all()
+    )
+    assert rows[0].sentiment_score is None
+
+
 async def test_ac2c_candidate_can_list_and_delete_own_turn_media(client, _fake_providers):
     """AC-M6 — 리포트 화면에서 원본 오디오 삭제 요청이 실제로 가능해야 함."""
     token = await _signup_and_login(client)

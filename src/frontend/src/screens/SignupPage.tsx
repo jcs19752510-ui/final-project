@@ -1,12 +1,15 @@
+"use client";
+
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../state/AuthContext";
 import { ApiError } from "../api/client";
 import type { Role } from "../api/types";
 
 export function SignupPage() {
   const { signup } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("candidate");
@@ -19,7 +22,7 @@ export function SignupPage() {
     setSubmitting(true);
     try {
       const user = await signup(email, password, role);
-      navigate(user.role === "recruiter" ? "/dashboard" : "/");
+      router.push(user.role === "recruiter" ? "/dashboard" : "/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "회원가입에 실패했습니다.");
     } finally {
@@ -63,7 +66,7 @@ export function SignupPage() {
         </button>
       </form>
       <p>
-        이미 계정이 있으신가요? <Link to="/login">로그인</Link>
+        이미 계정이 있으신가요? <Link href="/login">로그인</Link>
       </p>
     </div>
   );

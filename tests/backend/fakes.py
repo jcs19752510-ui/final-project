@@ -16,32 +16,52 @@ class FakeSTTProvider(STTProvider):
 
 
 class FakeLLMProvider(LLMProvider):
-    def __init__(self, action: str = "ask_question", reply_text: str = "다음 질문입니다."):
+    def __init__(
+        self,
+        action: str = "ask_question",
+        reply_text: str = "다음 질문입니다.",
+        evaluation: dict | None = None,
+    ):
         self.action = action
         self.reply_text = reply_text
+        self.evaluation = evaluation
         self.call_count = 0
 
     async def generate_next_turn(self, context: ConversationContext) -> LLMTurnResult:
         self.call_count += 1
-        return LLMTurnResult(reply_text=self.reply_text, action=self.action, evaluation=None)
+        return LLMTurnResult(reply_text=self.reply_text, action=self.action, evaluation=self.evaluation)
 
 
 class FakeReportGenerator(ReportGenerator):
-    def __init__(self, raise_exc: Exception | None = None):
+    def __init__(
+        self,
+        raise_exc: Exception | None = None,
+        technical_score: int = 4,
+        communication_score: int = 4,
+        cultural_fit_score: int = 3,
+        rubric_match: dict | None = None,
+    ):
         self.call_count = 0
         self.raise_exc = raise_exc  # 2026-09-08(u4 TRD §3-1) — 백그라운드 실패 경로 테스트용
+        self.technical_score = technical_score
+        self.communication_score = communication_score
+        self.cultural_fit_score = cultural_fit_score
+        self.rubric_match = rubric_match or {}
+        self.last_context: ReportContext | None = None  # 2026-09-18: rubric_context 전달 검증용
 
     async def generate(self, context: ReportContext) -> ReportResult:
         self.call_count += 1
+        self.last_context = context
         if self.raise_exc is not None:
             raise self.raise_exc
         return ReportResult(
-            technical_score=4,
-            communication_score=4,
-            cultural_fit_score=3,
+            technical_score=self.technical_score,
+            communication_score=self.communication_score,
+            cultural_fit_score=self.cultural_fit_score,
             summary_text="전반적으로 양호한 답변입니다.",
             star_analysis="STAR 구조를 대체로 따랐습니다.",
             pass_recommendation=True,
+            rubric_match=self.rubric_match,
         )
 
 

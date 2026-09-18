@@ -20,7 +20,9 @@ REPORT_SYSTEM_PROMPT = (
     "당신은 채용 평가관입니다. 아래 면접 대화와 코드 제출 이력을 바탕으로 "
     "STAR 기법(Situation/Task/Action/Result) 관점의 답변 구조 분석, 기술/"
     "커뮤니케이션/조직적합성 점수(1~5), 합격 추천 여부를 JSON으로만 "
-    "응답하십시오. 인구통계적 특징은 절대 평가에 반영하지 마십시오."
+    "응답하십시오. [채점 기준]이 주어진 질문이 있다면, 그 기준 항목별로 "
+    "지원자의 답변이 기준을 충족했는지도 함께 평가하십시오. 인구통계적 "
+    "특징은 절대 평가에 반영하지 마십시오."
 )
 
 
@@ -30,6 +32,10 @@ class ReportContext:
     transcript_lines: list[str] = field(default_factory=list)
     code_submissions: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
+    # 2026-09-18: Question.rubric_json(REQ-F-007 원안의 채점 기준)을
+    # 리포트 생성 단계까지 실제로 전달하기 위함 — [{"question": ..., "rubric":
+    # {...}}] 형태. 질문마다 rubric이 있는 건 아니라 빈 리스트일 수 있음.
+    rubric_context: list[dict] = field(default_factory=list)
 
 
 class ReportResult(BaseModel):
@@ -39,6 +45,9 @@ class ReportResult(BaseModel):
     summary_text: str
     star_analysis: str
     pass_recommendation: bool
+    # 질문별 채점 기준 항목명 → 충족 여부. rubric_context가 비어있으면
+    # 빈 dict로 응답하도록 프롬프트에서 안내한다.
+    rubric_match: dict = {}
 
 
 class ReportGenerator(ABC):
@@ -46,17 +55,34 @@ class ReportGenerator(ABC):
     async def generate(self, context: ReportContext) -> ReportResult: ...
 
 
+def _format_rubric_context(rubric_context: list[dict]) -> str:
+    if not rubric_context:
+        return "(채점 기준이 지정된 질문 없음)"
+    lines = []
+    for item in rubric_context:
+        rubric = item.get("rubric") or {}
+        if not rubric:
+            continue
+        criteria = "; ".join(f"{k}({v})" for k, v in rubric.items())
+        lines.append(f"- {item.get('question', '')}: {criteria}")
+    return "\n".join(lines) if lines else "(채점 기준이 지정된 질문 없음)"
+
+
 def _build_report_prompt(context: ReportContext) -> str:
     """Gemini/Groq 공용 프롬프트 본문."""
     transcript_text = "\n".join(context.transcript_lines)
     code_text = "\n---\n".join(context.code_submissions) or "(코드 제출 없음)"
+    rubric_text = _format_rubric_context(context.rubric_context)
     return (
         f"직무: {context.job_role}\n\n[대화 전문]\n{transcript_text}\n\n"
         f"[제출 코드]\n{code_text}\n\n[추출된 키워드]\n{', '.join(context.keywords)}\n\n"
+        f"[채점 기준]\n{rubric_text}\n\n"
         '다음 JSON 스키마로만 응답하세요: {"technical_score": 1-5, '
         '"communication_score": 1-5, "cultural_fit_score": 1-5, '
         '"summary_text": "종합 요약", "star_analysis": "STAR 구조 분석", '
-        '"pass_recommendation": true/false}'
+        '"pass_recommendation": true/false, '
+        '"rubric_match": {"[위 채점 기준 항목명]": true/false, "...": "..."} '
+        '(채점 기준이 없으면 빈 객체 {})}'
     )
 
 

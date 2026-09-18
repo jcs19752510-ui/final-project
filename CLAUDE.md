@@ -988,3 +988,56 @@ A0 인수인계 §3(편차)는 "몰랐는데 다르게 나온 것"을 기록하�
   위 4가지 진짜 갭 중 어느 것부터 진행할지, REQ-F-007 루브릭을 실사용
   하도록 채울지(A) 아니면 죽은 컬럼을 제거할지(B, 데이터모델 변경이라
   원칙8 대상)를 사람이 먼저 선택.
+- **아키텍처 다르게 구현된 부분 점검 + "원본과 맞출 수 있는 부분" 검토 →
+  4건 실제 반영 완료(2026-09-18, 같은 세션 계속)**: 사용자가 화면캡쳐로
+  09-09 전수검사 문서의 아키텍처 비교도를 보여주며 "왜 다르게 구현됐는지"
+  점검을 요청 → ADR-001/002/003/004/005/008을 전부 직접 열어 근거를
+  재확인하고, 유일하게 ADR 승인 없이 남아있던 갭(pgvector 설치했지만
+  RAG 미구현)과 문서 공백(ADR-005가 "제안됨"에 머묾)을 짚어 보고. 이어서
+  "다르게 구현된 부분 중 원본과 맞출 수 있는 게 있는지" 질문에 9개 항목을
+  전부 검토해 실익 유무로 분류(RAG 실사용/sentiment_score/rubric_json·
+  overall_score는 비용 0·근거 있음, Next.js/LangChain/Celery+Redis는
+  "실익 없음/불명확"으로 비권장, WebRTC 실시간·Kubernetes·Oracle/GCS는
+  예산 정책 없이는 불가능). 사용자가 **"1,2,3(sentiment_score/rubric_json·
+  overall_score/Celery+Redis) 모두 반영, 4는 Next.js만(LangChain은 보류)"**
+  으로 명시적으로 선택해 4건 전부 실제 구현:
+  1. **transcripts.sentiment_score**: 원본 ERD에 있었는데 구현 누락됐던
+     필드를 추가(마이그레이션 `98335ddb8f91`), LLM 턴 평가 JSON에
+     `sentiment_score`를 추가해 실제로 채워지게 연결.
+  2. **rubric_json 실사용 + overall_score 계산**: 시드 질문 10개 전부에
+     실제 채점 기준을 채우고 LLM 프롬프트에 실어 보내 `rubric_match`
+     평가를 받도록 연결, `interview.overall_score`를 리포트 세 하위 점수
+     평균으로 계산·저장.
+  3. **Celery+Redis 재도입**(ADR-003 갱신 — BackgroundTasks가 문제가 있어서가
+     아니라 원본 아키텍처 정합이 목적): `app/celery_app.py`/`app/tasks.py`
+     신규, `docker-compose.yml`에 `redis`+`worker` 서비스 추가. 실제로
+     부딪힌 기술 난관 3가지(provider 직렬화 불가/asyncpg 커넥션풀-이벤트루프
+     수명 불일치/테스트 환경 이벤트루프 충돌)를 전부 실측 기반으로
+     해결하고 ADR-003에 근거 기록.
+  4. **Next.js 전환**(Vite+react-router-dom → App Router): 8개 라우트
+     전부 1:1 매핑. `src/pages/`가 Next.js의 레거시 Pages Router 예약
+     디렉터리와 충돌해 빌드가 깨지는 것을 발견해 `src/screens/`로 이름
+     변경. `react-router`의 `useLocation().state`를 sessionStorage 1회성
+     릴레이로 대체, SSR 프리렌더 패스에서 `sessionStorage` 미정의로 죽을
+     수 있던 `api/client.ts`를 가드. Dockerfile을 nginx 정적 서빙에서
+     Node standalone 서버 구동으로 교체(동적 라우트 때문에 정적 export
+     불가).
+  **검증**: 벡엔드 pytest 신규 5건 포함 **104 passed**(eager Celery 모드),
+  ruff/mypy 클린. **실제 Docker Compose(postgres+redis+app+worker)로
+  진짜 Redis를 거친 E2E**(실제 Groq LLM/STT 호출, ffmpeg로 만든 실제 오디오로
+  면접 10턴 진행) — worker 컨테이너 로그에서 `Task ... received`→
+  `succeeded`까지 직접 확인, `interview.overall_score` DB 실측 확인.
+  프론트엔드 `npm run build`(9라우트 전부 컴파일 성공)/`tsc --noEmit`(0
+  오류)/`vitest`(17 passed)/`oxlint`(오류 0) 전부 통과, Next.js 프로덕션
+  Docker 이미지 빌드·기동까지 확인(`curl localhost:8080/login` 200).
+  **한계**: Claude in Chrome 브라우저 확장이 이 세션에서 연결되지 않아
+  실제 클릭/타이핑 인터랙티브 조작은 검증 못 함 — SSR/빌드 수준까지만
+  확인(내부테스트결과서에 명시). 결과 기록:
+  `내부테스트결과서/원본정합4건_sentiment_rubric_Celery_NextJS_20260918173735.md`.
+  ADR-003 §갱신, 마스터 TRD/aimock_u4_trd/aimock_frontend_trd/
+  tech_conventions.md 동기화 완료. LangChain 전환은 사용자 지시대로 보류.
+  **다음 액션(사람 필요)**: ① `http://localhost:3000`(dev 서버 계속 실행
+  중)에서 직접 클릭해보며 인터랙티브 동작 확인, ② git 커밋·푸시(변경
+  파일이 매우 많음 — `git status`로 전체 diff 먼저 확인 권장), ③ Render
+  등 운영 배포 시 프론트엔드 빌드/구동 커맨드가 `next build`/`node
+  server.js`로 바뀐 것을 배포 설정에도 반영.

@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.models.evaluation_report import EvaluationReport
 from app.models.interview import Interview
+from app.models.question import Question
 from app.models.transcript import Transcript
 from app.models.user import User
 
@@ -347,3 +348,89 @@ async def test_u4_ac12_stale_processing_report_allows_retry(db_session):
     assert report.processing_started_at > (
         datetime.now(timezone.utc) - timedelta(seconds=10)
     )
+
+
+async def test_u4_ac14_rubric_context_reaches_report_generator_from_linked_question(
+    client, db_session, _fake_report_generator
+):
+    """2026-09-18 추가 — REQ-F-007(루브릭 기반 채점) 원안 반영: 오프닝
+    질문처럼 question_id가 남아있는 턴은 그 질문의 rubric_json이 실제로
+    리포트 생성 프롬프트까지 전달되고, LLM이 돌려준 rubric_match가
+    details_json에 그대로 저장돼야 한다(그동안 컬럼만 있고 아무도 안 읽던
+    죽은 컬럼이었던 것을 실사용화)."""
+    fake_report = _fake_report_generator
+    fake_report.rubric_match = {"핵심 경력 요약": True, "논리적 구성": False}
+
+    token = await _signup_and_login(client)
+    question = Question(
+        content="자기소개를 부탁드립니다.",
+        category="general",
+        difficulty=1,
+        rubric_json={"핵심 경력 요약": "...", "논리적 구성": "..."},
+    )
+    db_session.add(question)
+    await db_session.flush()
+
+    user = await db_session.scalar(select(User).where(User.email == "candidate@example.com"))
+    interview = Interview(candidate_id=user.id, job_role="backend", status="completed")
+    db_session.add(interview)
+    await db_session.flush()
+    db_session.add(
+        Transcript(
+            interview_id=interview.id,
+            turn_index=0,
+            speaker="ai",
+            question_id=question.id,
+            text=question.content,
+        )
+    )
+    db_session.add(
+        Transcript(
+            interview_id=interview.id, turn_index=0, speaker="user", text="5년차 백엔드 개발자입니다."
+        )
+    )
+    await db_session.commit()
+
+    body = await _generate_and_fetch(client, token, interview.id)
+
+    assert fake_report.last_context is not None
+    assert fake_report.last_context.rubric_context == [
+        {
+            "question": "자기소개를 부탁드립니다.",
+            "rubric": {"핵심 경력 요약": "...", "논리적 구성": "..."},
+        }
+    ]
+    assert body["details_json"]["rubric_match"] == {"핵심 경력 요약": True, "논리적 구성": False}
+
+
+async def test_u4_ac15_rubric_context_empty_when_no_linked_question_has_rubric(
+    client, db_session, _fake_report_generator
+):
+    """대비 케이스 — question_id가 없는(자유 형식 후속 질문) 턴만 있으면
+    rubric_context가 빈 리스트여야 한다(예외 없이 조용히 처리)."""
+    token = await _signup_and_login(client)
+    interview = await _make_interview(db_session)  # question_id 없는 transcript만 생성
+
+    await _generate_and_fetch(client, token, interview.id)
+
+    assert _fake_report_generator.last_context is not None
+    assert _fake_report_generator.last_context.rubric_context == []
+
+
+async def test_u4_ac16_overall_score_is_average_of_three_report_scores(
+    client, db_session, _fake_report_generator
+):
+    """2026-09-18 추가 — Interviews.overall_score(원본 ERD, 그동안 죽은
+    컬럼)를 리포트의 세 하위 점수 평균으로 채운다."""
+    fake_report = _fake_report_generator
+    fake_report.technical_score = 5
+    fake_report.communication_score = 3
+    fake_report.cultural_fit_score = 4
+
+    token = await _signup_and_login(client)
+    interview = await _make_interview(db_session)
+
+    await _generate_and_fetch(client, token, interview.id)
+
+    await db_session.refresh(interview)
+    assert interview.overall_score == 4.0

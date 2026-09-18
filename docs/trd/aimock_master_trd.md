@@ -42,9 +42,10 @@ flowchart TD
         C4["채용담당자 대시보드"]
     end
 
-    subgraph Server["FastAPI (단일 서버, 로컬 Docker Compose)"]
-        S1["Core API<br/>인증/세션/면접 진행"]
-        S2["AI 파이프라인 서비스<br/>BackgroundTasks"]
+    subgraph Server["로컬 Docker Compose (2026-09-18 갱신: Celery+Redis 재도입, ADR-003 갱신)"]
+        S1["Core API (FastAPI)<br/>인증/세션/면접 진행"]
+        S2["Celery Worker<br/>리포트 생성(LLM 요약+표정/음성분석)"]
+        S5[("Redis<br/>브로커")]
     end
 
     subgraph AI["AI 구성요소 (전부 무료 — 2026-09-08 갱신: STT/LLM 모두 Groq로<br/>일원화. ADR-002/ADR-008 참조, 로컬 대안(faster-whisper/Gemini)은<br/>어댑터 코드로 남아있으나 기본 조립에서는 빠짐)"]
@@ -58,7 +59,8 @@ flowchart TD
     C1 -- "턴 종료 시 오디오/프레임 업로드" --> S1
     C2 -- "코드 실행 요청" --> S1
     C3 -- "화이트보드 이미지" --> S1
-    S1 --> S2
+    S1 -. "리포트 생성 태스크 발행" .-> S5
+    S5 -. "워커가 큐 소비" .-> S2
     S2 --> A1
     S2 --> A2
     S2 --> A3
@@ -86,7 +88,7 @@ sequenceDiagram
     LLM-->>API: JSON {다음질문 또는 종료, 평가 신호}
     API->>DB: 평가 신호 임시 저장
     API-->>U: 다음 질문 텍스트 반환 (브라우저 TTS로 재생)
-    Note over API,DB: 표정/음성운율 분석은 BackgroundTasks로 비동기 처리
+    Note over API,DB: 표정/음성운율 분석은 Celery 워커(Redis 브로커)로<br/>비동기 처리 — 2026-09-18 갱신, ADR-003 갱신 참조
 ```
 
 ## §2. 기능 요구사항 [사람 승인 완료 — 2026-09-08, 실제 구현 기준으로 정정]
